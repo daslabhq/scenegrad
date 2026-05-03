@@ -254,3 +254,56 @@ for (const a of final.assertions) {
 }
 
 console.log(`\nUsage: ${result.usage.inputTokens} in, ${result.usage.outputTokens} out`);
+
+// Dump trajectory as scene-otel-format JSONL for the viewer.
+import { writeFileSync } from "node:fs";
+const traj = watcher.trajectory();
+const start_ns = (Date.now() - (traj[traj.length - 1]?.ts_ms ?? 0)) * 1e6;
+const end_ns = Date.now() * 1e6;
+const span = {
+  trace_id:       Array.from({ length: 32 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join(""),
+  span_id:        Array.from({ length: 16 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join(""),
+  parent_span_id: null,
+  name:           `support-triage.${world.ticket.id}.haiku-4-5`,
+  start_time_ns:  start_ns,
+  end_time_ns:    end_ns,
+  kind: 0,
+  status: { code: final.done ? 0 : 2 },
+  attributes: {
+    "bench.task_id":     `support-triage-${world.ticket.id}`,
+    "bench.solver":      "observer",
+    "bench.model":       "claude-haiku-4-5",
+    "bench.success":     final.done,
+    "bench.steps":       traj.length,
+    "bench.d_initial":   traj[0]?.d_before ?? 0,
+    "bench.d_final":     final.gap,
+    "bench.duration_ms": Date.now() - start_ns / 1e6,
+  },
+  events: traj.flatMap((t, i) => {
+    const ts_ns = start_ns + t.ts_ms * 1e6;
+    const out: any[] = [];
+    if (t.tool) {
+      out.push({
+        name: "scene.set", time_ns: ts_ns,
+        attributes: {
+          "scene.key": "tool", "scene.kind": "intent",
+          "scene.value": JSON.stringify({ tool: t.tool, reasoning: t.reasoning }),
+          "scene.value.type": "json", "scene.value.size": 0, "scene.commit_hash": "",
+          "scene.description": t.tool.name,
+        },
+      });
+    }
+    out.push({
+      name: "scene.set", time_ns: ts_ns + 1,
+      attributes: {
+        "scene.key": "distance", "scene.kind": "actual",
+        "scene.value": JSON.stringify({ d_before: t.d_before, d_after: t.d_after, delta: t.delta }),
+        "scene.value.type": "json", "scene.value.size": 0, "scene.commit_hash": "",
+        "scene.description": `step ${t.step}`,
+      },
+    });
+    return out;
+  }),
+};
+writeFileSync("./viewer/example-traces/scenegrad-support-triage-haiku-4-5.jsonl", JSON.stringify(span) + "\n");
+console.log(`\n→ trajectory dumped to viewer/example-traces/scenegrad-support-triage-haiku-4-5.jsonl`);

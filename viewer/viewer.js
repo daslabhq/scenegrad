@@ -129,20 +129,6 @@ function renderGapCurve(t) {
   path.setAttribute("stroke-linecap", "round");
   path.setAttribute("stroke-linejoin", "round");
   svg.appendChild(path);
-  const predicted = [t.meta.d_initial];
-  for (const s of t.steps) {
-    const last = predicted[predicted.length - 1];
-    predicted.push(s.predicted_delta !== undefined ? Math.max(0, last - s.predicted_delta) : last);
-  }
-  if (t.steps.some((s) => s.predicted_delta !== undefined)) {
-    const ppath = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    ppath.setAttribute("points", predicted.map((d, i) => `${stepX(i)},${stepY(d)}`).join(" "));
-    ppath.setAttribute("fill", "none");
-    ppath.setAttribute("stroke", "#fb923c");
-    ppath.setAttribute("stroke-dasharray", "4 3");
-    ppath.setAttribute("stroke-width", "1.5");
-    svg.appendChild(ppath);
-  }
   for (let i = 0;i < dValues.length; i++) {
     const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     c.setAttribute("cx", String(stepX(i)));
@@ -185,29 +171,13 @@ function renderStep(i) {
   if (step.tool) {
     const row = document.createElement("div");
     row.innerHTML = `
-      <div class="text-slate-400 uppercase text-[10px] tracking-wide mb-1">tool call</div>
-      <div class="mono text-sm font-semibold">${escapeHtml(step.tool.name)}<span class="text-slate-400">(</span>${formatArgs(step.tool.args)}<span class="text-slate-400">)</span></div>
+      <div class="mono text-base font-semibold">${escapeHtml(step.tool.name)}<span class="text-slate-400">(</span>${formatArgs(step.tool.args)}<span class="text-slate-400">)</span></div>
     `;
     intent.appendChild(row);
-    if (step.predicted_delta !== undefined) {
-      const drift = step.predicted_delta - step.delta;
-      const driftClass = Math.abs(drift) > 0.5 ? "text-orange-600 font-semibold" : "text-slate-500";
-      const pred = document.createElement("div");
-      pred.innerHTML = `
-        <div class="text-slate-400 uppercase text-[10px] tracking-wide mt-3 mb-1">predicted vs actual</div>
-        <div class="text-sm">
-          predicted Δ <span class="mono font-semibold">${step.predicted_delta}</span>
-          · actual Δ <span class="mono font-semibold">${step.delta}</span>
-          · drift <span class="mono ${driftClass}">${drift >= 0 ? "+" : ""}${drift.toFixed(1)}</span>
-        </div>
-      `;
-      intent.appendChild(pred);
-    }
     if (step.reasoning) {
       const r = document.createElement("div");
       r.innerHTML = `
-        <div class="text-slate-400 uppercase text-[10px] tracking-wide mt-3 mb-1">reasoning</div>
-        <div class="text-sm text-slate-700 italic">"${escapeHtml(step.reasoning)}"</div>
+        <div class="text-sm text-slate-600 italic mt-3">"${escapeHtml(step.reasoning)}"</div>
       `;
       intent.appendChild(r);
     }

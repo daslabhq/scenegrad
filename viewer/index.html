@@ -48,14 +48,10 @@
       <div class="flex gap-3 flex-wrap items-center">
         <select id="example-picker" class="border border-slate-300 rounded px-3 py-2 text-sm bg-white">
           <option value="">Pick an example trajectory…</option>
-          <optgroup label="ARC trajectory">
-            <option value="example-traces/scenegrad-arc-recolor_then_mirror-claude-haiku-4-5.jsonl">recolor + mirror · Haiku · 2 steps</option>
-            <option value="example-traces/scenegrad-arc-recolor_1_to_2-claude-haiku-4-5.jsonl">recolor 1→2 · Haiku · 1 step</option>
-            <option value="example-traces/scenegrad-arc-mirror_horizontal-claude-haiku-4-5.jsonl">mirror horizontal · Haiku · 1 step</option>
-            <option value="example-traces/scenegrad-arc-recolor_then_mirror-greedy.jsonl">recolor + mirror · greedy baseline</option>
-          </optgroup>
-          <optgroup label="AutomationBench">
-            <option value="example-traces/scenegrad-ab-simple_email_sf_contact_phone_update-claude-haiku-4-5.jsonl">simple · Jordan Lee phone update · Haiku · 5 steps</option>
+          <option value="example-traces/scenegrad-support-triage-haiku-4-5.jsonl">Support triage · Vercel AI SDK · Haiku</option>
+          <optgroup label="More examples">
+            <option value="example-traces/scenegrad-ab-simple_email_sf_contact_phone_update-claude-haiku-4-5.jsonl">AutomationBench · Jordan Lee phone update · Haiku</option>
+            <option value="example-traces/scenegrad-arc-recolor_then_mirror-claude-haiku-4-5.jsonl">ARC · recolor + mirror · Haiku</option>
           </optgroup>
         </select>
         <label class="border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-pointer hover:bg-slate-50">
@@ -125,17 +121,17 @@
     <!-- Two-column main layout -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-      <!-- Left: agent intent (current step) -->
+      <!-- Left: action this step (tool + reasoning) -->
       <div class="bg-white rounded-lg border border-slate-200 p-4 md:col-span-2">
-        <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">agent intent</div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">action</div>
         <div id="intent-pane" class="text-sm space-y-2">
-          <div class="text-slate-400 italic">no intent at this step</div>
+          <div class="text-slate-400 italic">no action at this step</div>
         </div>
       </div>
 
-      <!-- Right: assertion ticker -->
+      <!-- Right: goal progress -->
       <div class="bg-white rounded-lg border border-slate-200 p-4">
-        <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">goal assertions</div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">goal progress</div>
         <div id="assertions-pane" class="space-y-1.5 text-sm">—</div>
       </div>
     </div>
