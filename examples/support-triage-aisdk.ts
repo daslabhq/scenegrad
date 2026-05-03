@@ -103,11 +103,21 @@ const watcher = observe<Ticket>({
 // Tools — Vercel AI SDK native
 // ---------------------------------------------------------------------------
 
+// Helper: wrap a tool's execute so scenegrad records one trajectory step
+// per tool invocation (not per AI SDK "step" which can batch tool calls).
+function recorded<I, O>(name: string, exec: (input: I) => Promise<O> | O) {
+  return async (input: I) => {
+    const result = await exec(input);
+    await watcher.recordStep({ tool: { name, args: input as any } });
+    return result;
+  };
+}
+
 const tools = {
   read_ticket: tool({
     description: "Read the current ticket details.",
     inputSchema: z.object({}),
-    execute: async () => world.ticket,
+    execute: recorded("read_ticket", async () => world.ticket),
   }),
 
   enrich_with_account: tool({
@@ -115,13 +125,13 @@ const tools = {
     inputSchema: z.object({
       customer_id: z.string().describe("e.g. acme-corp"),
     }),
-    execute: async ({ customer_id }) => {
+    execute: recorded("enrich_with_account", async ({ customer_id }) => {
       const profile = world.customer_db[customer_id];
       if (!profile) return { error: "customer not found" };
       world.ticket.enriched = profile;
       world.ticket.status = "investigating";
       return profile;
-    },
+    }),
   }),
 
   search_kb: tool({
@@ -129,13 +139,13 @@ const tools = {
     inputSchema: z.object({
       keywords: z.array(z.string()).describe("e.g. ['webhook', '504']"),
     }),
-    execute: async ({ keywords }) => {
+    execute: recorded("search_kb", async ({ keywords }) => {
       const matches = world.kb.filter(article =>
         keywords.some(k => article.matches.some(m => m.toLowerCase().includes(k.toLowerCase()))));
       const best = matches[0];
       world.ticket.kb_match = best?.id ?? "no-match";
       return { matches, best_match: best };
-    },
+    }),
   }),
 
   auto_resolve: tool({
@@ -143,11 +153,11 @@ const tools = {
     inputSchema: z.object({
       reply: z.string().describe("The auto-response to send"),
     }),
-    execute: async ({ reply }) => {
+    execute: recorded("auto_resolve", async ({ reply }) => {
       world.ticket.reply = reply;
       world.ticket.status = "auto-resolved";
       return { ok: true, status: "auto-resolved" };
-    },
+    }),
   }),
 
   escalate_t2: tool({
@@ -155,11 +165,11 @@ const tools = {
     inputSchema: z.object({
       reason: z.string(),
     }),
-    execute: async ({ reason }) => {
+    execute: recorded("escalate_t2", async ({ reason }) => {
       world.ticket.reply = `Escalated to T2: ${reason}`;
       world.ticket.status = "escalated-t2";
       return { ok: true, status: "escalated-t2" };
-    },
+    }),
   }),
 
   escalate_vip: tool({
@@ -168,11 +178,11 @@ const tools = {
       reason:  z.string(),
       urgency: z.enum(["high", "critical"]),
     }),
-    execute: async ({ reason, urgency }) => {
+    execute: recorded("escalate_vip", async ({ reason, urgency }) => {
       world.ticket.reply = `[${urgency.toUpperCase()}] Escalated to VIP: ${reason}`;
       world.ticket.status = "escalated-vip";
       return { ok: true, status: "escalated-vip" };
-    },
+    }),
   }),
 };
 
@@ -198,6 +208,11 @@ const result = await generateText({
   model: anthropic("claude-haiku-4-5"),
   stopWhen: stepCountIs(8),
   tools,
+  // Disable parallel tool calls so the trajectory shows one tool per step
+  // instead of batching enrich + search_kb in a single model turn.
+  providerOptions: {
+    anthropic: { disableParallelToolUse: true },
+  },
 
   // The system prompt is regenerated on every step via `prepareStep` —
   // so the agent always sees fresh status from scenegrad.
@@ -221,15 +236,9 @@ const result = await generateText({
     };
   },
 
-  // scenegrad's only line of integration: re-snapshot the world after each tool result.
-  onStepFinish: async ({ toolCalls }) => {
-    for (const call of toolCalls ?? []) {
-      await watcher.recordStep({
-        tool: { name: call.toolName, args: (call as any).input ?? (call as any).args ?? {} },
-      });
-    }
-    if (!toolCalls || toolCalls.length === 0) await watcher.recordStep({});
-  },
+  // (scenegrad's recordStep happens inside each tool's execute — see the
+  //  `recorded` helper above. That gives one trajectory step per tool call,
+  //  even when AI SDK batches multiple tool calls in one model step.)
 
   prompt: `Triage ticket ${world.ticket.id}. Read it, enrich it, search the KB, then route.`,
 });

@@ -1,3 +1,124 @@
+// widgets/ticket.ts
+var STATUS_STYLE = {
+  new: { bg: "bg-slate-100", text: "text-slate-700", dot: "bg-slate-400", label: "new" },
+  investigating: { bg: "bg-blue-100", text: "text-blue-700", dot: "bg-blue-500", label: "investigating" },
+  "auto-resolved": { bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500", label: "auto-resolved" },
+  "escalated-t2": { bg: "bg-amber-100", text: "text-amber-800", dot: "bg-amber-500", label: "escalated · T2" },
+  "escalated-vip": { bg: "bg-red-100", text: "text-red-700", dot: "bg-red-500", label: "escalated · VIP" }
+};
+function isTicket(s) {
+  if (!s || typeof s !== "object")
+    return false;
+  const t = s;
+  return typeof t.id === "string" && typeof t.subject === "string" && typeof t.customer === "string" && typeof t.status === "string";
+}
+function renderTicket(t) {
+  const style = STATUS_STYLE[t.status] ?? STATUS_STYLE["new"];
+  const kbChip = t.kb_match ? `<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-violet-100 text-violet-700">
+         <span class="mr-1">⚠</span>${escapeHtml(t.kb_match)}
+       </span>` : "";
+  const replyBlock = t.reply ? `<div class="mt-3 pt-3 border-t border-slate-100">
+         <div class="text-[10px] uppercase tracking-wide text-slate-400 mb-1.5">reply</div>
+         <div class="bg-slate-50 rounded-md p-3 text-sm leading-relaxed">
+           ${formatReply(t.reply)}
+         </div>
+       </div>` : "";
+  return `
+    <article class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+      <header class="px-4 py-3 flex items-start justify-between gap-3 border-b border-slate-100">
+        <div class="min-w-0">
+          <div class="text-[11px] font-mono text-slate-400 uppercase tracking-wide">${escapeHtml(t.id)}</div>
+          <div class="text-base font-semibold text-slate-900 truncate">${escapeHtml(t.subject)}</div>
+        </div>
+        <span class="shrink-0 inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${style.bg} ${style.text}">
+          <span class="w-1.5 h-1.5 rounded-full ${style.dot} mr-1.5"></span>
+          ${style.label}
+        </span>
+      </header>
+
+      <div class="px-4 py-3 space-y-2">
+        <div class="text-[11px] uppercase tracking-wide text-slate-400">customer</div>
+        <div class="text-sm text-slate-700 font-medium">${escapeHtml(t.customer)}${kbChip}</div>
+
+        <div class="text-[11px] uppercase tracking-wide text-slate-400 mt-3">issue</div>
+        <div class="text-sm text-slate-600 italic leading-relaxed">"${escapeHtml(t.body)}"</div>
+
+        ${replyBlock}
+      </div>
+    </article>
+  `;
+}
+function formatReply(reply) {
+  const m = reply.match(/^\s*\[(CRITICAL|HIGH|URGENT|WARNING)\]\s*(.*)$/s);
+  if (m) {
+    const [, tag, rest] = m;
+    const tagColor = tag === "CRITICAL" ? "bg-red-600" : tag === "HIGH" || tag === "URGENT" ? "bg-amber-600" : "bg-slate-600";
+    return `<span class="inline-block ${tagColor} text-white px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider mr-1.5">${tag}</span><span class="text-slate-800">${escapeHtml(rest)}</span>`;
+  }
+  return `<span class="text-slate-800">${escapeHtml(reply)}</span>`;
+}
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+// widgets/customer.ts
+var TIER_STYLE = {
+  free: { bg: "bg-slate-100", text: "text-slate-600", label: "FREE" },
+  pro: { bg: "bg-sky-100", text: "text-sky-700", label: "PRO" },
+  enterprise: { bg: "bg-amber-100", text: "text-amber-800", label: "ENTERPRISE" }
+};
+function renderCustomer(t) {
+  if (!t.enriched) {
+    return `
+      <article class="bg-white rounded-lg border border-slate-200 border-dashed">
+        <div class="px-4 py-6 text-center">
+          <div class="text-[11px] uppercase tracking-wide text-slate-400 mb-2">customer</div>
+          <div class="text-sm text-slate-400 italic">lookup pending</div>
+          <div class="text-xs text-slate-300 mt-2">${escapeHtml2(t.customer)}</div>
+        </div>
+      </article>
+    `;
+  }
+  const tier = TIER_STYLE[t.enriched.tier] ?? TIER_STYLE.free;
+  const ltv = formatMoney(t.enriched.ltv_usd);
+  const incidents = t.enriched.prior_incidents;
+  const incidentColor = incidents >= 5 ? "text-red-600" : incidents >= 2 ? "text-amber-600" : "text-slate-500";
+  return `
+    <article class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+      <header class="px-4 py-3 border-b border-slate-100">
+        <div class="text-[11px] uppercase tracking-wide text-slate-400">customer</div>
+        <div class="flex items-center gap-2 mt-1">
+          <div class="text-base font-semibold text-slate-900 truncate">${escapeHtml2(t.customer)}</div>
+          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide ${tier.bg} ${tier.text}">
+            ${tier.label}
+          </span>
+        </div>
+      </header>
+
+      <div class="px-4 py-3 space-y-2.5">
+        <div class="flex items-baseline justify-between">
+          <span class="text-[11px] text-slate-500">LTV</span>
+          <span class="text-sm font-semibold text-slate-800 mono">${ltv}</span>
+        </div>
+        <div class="flex items-baseline justify-between">
+          <span class="text-[11px] text-slate-500">prior incidents</span>
+          <span class="text-sm font-semibold mono ${incidentColor}">${incidents}</span>
+        </div>
+      </div>
+    </article>
+  `;
+}
+function formatMoney(usd) {
+  if (usd >= 1e6)
+    return `$${(usd / 1e6).toFixed(usd >= 1e7 ? 0 : 1)}M`;
+  if (usd >= 1000)
+    return `$${(usd / 1000).toFixed(usd >= 1e5 ? 0 : 0)}k`;
+  return `$${usd}`;
+}
+function escapeHtml2(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
 // viewer.ts
 function parseJsonl(text) {
   for (const line of text.split(/\r?\n/)) {
@@ -185,13 +306,13 @@ function renderStep(i) {
   if (step.tool) {
     const row = document.createElement("div");
     row.innerHTML = `
-      <div class="mono text-base font-semibold">${escapeHtml(step.tool.name)}<span class="text-slate-400">(</span>${formatArgs(step.tool.args)}<span class="text-slate-400">)</span></div>
+      <div class="mono text-base font-semibold">${escapeHtml3(step.tool.name)}<span class="text-slate-400">(</span>${formatArgs(step.tool.args)}<span class="text-slate-400">)</span></div>
     `;
     intent.appendChild(row);
     if (step.reasoning) {
       const r = document.createElement("div");
       r.innerHTML = `
-        <div class="text-sm text-slate-600 italic mt-3">"${escapeHtml(step.reasoning)}"</div>
+        <div class="text-sm text-slate-600 italic mt-3">"${escapeHtml3(step.reasoning)}"</div>
       `;
       intent.appendChild(r);
     }
@@ -215,6 +336,15 @@ function renderScenePane(stepIdx) {
     pane.innerHTML = `<div class="text-slate-400 italic">no scene snapshot at this step</div>`;
     return;
   }
+  if (isTicket(scene)) {
+    pane.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+        <div class="md:col-span-8">${renderTicket(scene)}</div>
+        <div class="md:col-span-4">${renderCustomer(scene)}</div>
+      </div>
+    `;
+    return;
+  }
   let prev;
   for (let i = stepIdx - 1;i >= 0; i--) {
     if (current.steps[i]?.scene_after) {
@@ -222,7 +352,7 @@ function renderScenePane(stepIdx) {
       break;
     }
   }
-  pane.innerHTML = `<div class="space-y-1">${renderObjectDiff(scene, prev, 0)}</div>`;
+  pane.innerHTML = `<div class="space-y-1 font-mono">${renderObjectDiff(scene, prev, 0)}</div>`;
 }
 var MAX_DEPTH = 4;
 function renderObjectDiff(curr, prev, depth) {
@@ -248,7 +378,7 @@ function renderObjectDiff(curr, prev, depth) {
     const v = curr[k];
     const pv = prev?.[k];
     const changed = JSON.stringify(v) !== JSON.stringify(pv);
-    const label = `<span class="text-slate-500">${escapeHtml(k)}:</span>`;
+    const label = `<span class="text-slate-500">${escapeHtml3(k)}:</span>`;
     if (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0) {
       return `<div class="${changed ? "bg-emerald-100/70 rounded px-1" : ""}">${label} <span class="text-slate-400">{}</span></div>`;
     }
@@ -271,9 +401,9 @@ function formatLeaf(v) {
     return `<span class="text-blue-700">${v}</span>`;
   if (typeof v === "string") {
     const truncated = v.length > 120 ? v.slice(0, 120) + "…" : v;
-    return `<span class="text-emerald-700">"${escapeHtml(truncated)}"</span>`;
+    return `<span class="text-emerald-700">"${escapeHtml3(truncated)}"</span>`;
   }
-  return `<span>${escapeHtml(String(v))}</span>`;
+  return `<span>${escapeHtml3(String(v))}</span>`;
 }
 function renderAssertionsPane(_step) {
   const pane = $("assertions-pane");
@@ -308,13 +438,13 @@ function renderAssertionsPane(_step) {
     </div>
   `;
 }
-function escapeHtml(s) {
+function escapeHtml3(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }
 function formatArgs(args) {
   if (!args || Object.keys(args).length === 0)
     return "";
-  const items = Object.entries(args).slice(0, 4).map(([k, v]) => `<span class="text-slate-400">${escapeHtml(k)}</span>:${escapeHtml(typeof v === "string" ? v : JSON.stringify(v)).slice(0, 60)}`);
+  const items = Object.entries(args).slice(0, 4).map(([k, v]) => `<span class="text-slate-400">${escapeHtml3(k)}</span>:${escapeHtml3(typeof v === "string" ? v : JSON.stringify(v)).slice(0, 60)}`);
   return items.join(", ");
 }
 async function loadFromUrl(url) {

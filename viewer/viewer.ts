@@ -7,10 +7,12 @@
  *   - scrubber to step-by-step replay
  *   - agent intent pane (chosen tool + reasoning + predicted_delta)
  *   - assertion ticker (which assertions hold at the current step)
- *
- * No build step — type-stripped TS via the browser's module loader (Bun
- * dev) or compiled to viewer.js for Pages deploy.
+ *   - SCENE pane via typed widgets (Ticket + Customer for support-shaped scenes)
+ *     with JSON-tree fallback for arbitrary shapes
  */
+
+import { isTicket, renderTicket, type Ticket } from "./widgets/ticket.js";
+import { renderCustomer } from "./widgets/customer.js";
 
 interface SceneSetEvent {
   name:     "scene.set";
@@ -333,12 +335,24 @@ function renderScenePane(stepIdx: number) {
     pane.innerHTML = `<div class="text-slate-400 italic">no scene snapshot at this step</div>`;
     return;
   }
-  // Find previous step's scene to diff against. Walk back until one exists.
+
+  // Typed-widget dispatch — pretty rendering for known shapes.
+  if (isTicket(scene)) {
+    pane.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+        <div class="md:col-span-8">${renderTicket(scene as Ticket)}</div>
+        <div class="md:col-span-4">${renderCustomer(scene as Ticket)}</div>
+      </div>
+    `;
+    return;
+  }
+
+  // Fallback: generic JSON tree with field-change highlighting.
   let prev: any;
   for (let i = stepIdx - 1; i >= 0; i--) {
     if (current.steps[i]?.scene_after) { prev = current.steps[i]!.scene_after; break; }
   }
-  pane.innerHTML = `<div class="space-y-1">${renderObjectDiff(scene, prev, 0)}</div>`;
+  pane.innerHTML = `<div class="space-y-1 font-mono">${renderObjectDiff(scene, prev, 0)}</div>`;
 }
 
 const MAX_DEPTH = 4;
