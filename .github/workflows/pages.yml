@@ -31,6 +31,8 @@ jobs:
         run: bun build viewer/viewer.ts --outfile=viewer/viewer.js --target=browser
 
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./viewer
