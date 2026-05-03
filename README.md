@@ -2,9 +2,36 @@
 
 > **Drop into your agent in 2 lines. Get a scrubbable replay. Level up when you're ready.**
 
-![scenegrad viewer](./docs/demo.gif)
+[![v0.0.1](https://img.shields.io/badge/version-v0.0.1--alpha-orange)](https://github.com/daslabhq/scenegrad)
+[![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+
+[![scenegrad viewer](./docs/demo.gif)](https://daslabhq.github.io/scenegrad/bulk.html)
 
 *Above: 12 support-triage trajectories at a glance, then drill into one. The bulk view shows the distribution (3 escalated-vip in red, 6 escalated-t2 in amber, 3 auto-resolved in emerald). Filter chips narrow the grid; click any card to scrub through the full trajectory with typed widgets — Ticket card on the left shows the world morphing (`status: new` → `investigating` → `escalated-vip`, `[CRITICAL]` reply appearing), Customer card on the right materializes with ENTERPRISE badge + LTV when the agent runs `enrich_with_account`. All 12 runs cost ~$0.02 in Haiku tokens.*
+
+**[→ Try the live demo](https://daslabhq.github.io/scenegrad/bulk.html)** · **[Single-trace viewer](https://daslabhq.github.io/scenegrad/)**
+
+---
+
+## Is this for you?
+
+scenegrad pays off when your agent does **multi-step work that mutates state**. Specifically:
+
+- ✅ Your agent calls multiple tools across multiple turns
+- ✅ Those tools change something — a CRM record, a ticket status, a database row, a scheduled job
+- ✅ You can't tell from the tool-call log alone whether the *world* ended up in the right state
+- ✅ You want to compare runs across models or prompts and see *trajectories*, not just final scores
+- ✅ You're using Vercel AI SDK, Anthropic SDK, LangChain, or your own loop (5-line drop-in for any)
+
+scenegrad is **not** the right fit if:
+
+- ❌ Your agent is single-call chat / RAG with no state mutation — Phoenix or Helicone will serve you better
+- ❌ You only need output scoring (LLM-as-judge) — Braintrust does that better; consider scenegrad alongside, not instead
+- ❌ You need a full eval platform with annotation queues, datasets-as-a-service, etc. — that's not the scope here
+
+We're explicitly *not* trying to be a replacement for those tools. scenegrad fills the gap they don't: visualizing typed scene state across multi-step trajectories, with a viewer that scales from single-trace to bulk grid.
+
+---
 
 scenegrad is a tiny observability + evaluation substrate for AI agents. Pay only for what you use:
 
