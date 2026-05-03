@@ -42,17 +42,26 @@ let activeFilters = new Set<string>();
 const $ = (id: string) => document.getElementById(id)!;
 
 async function loadSuite() {
-  const manifestRes = await fetch("./example-traces/suite/manifest.json");
+  // Manifest URL — overridable via ?manifest=URL (used by scenegrad-view CLI).
+  const params = new URLSearchParams(location.search);
+  const manifestUrl = params.get("manifest") ?? "./example-traces/suite/manifest.json";
+
+  const manifestRes = await fetch(manifestUrl);
   if (!manifestRes.ok) {
-    $("grid").innerHTML = `<div class="col-span-full text-rose-500">failed to load manifest</div>`;
+    $("grid").innerHTML = `<div class="col-span-full text-rose-500">failed to load manifest from ${escapeHtml(manifestUrl)}</div>`;
     return;
   }
   const manifest: ManifestEntry[] = await manifestRes.json();
+  const manifestBase = manifestUrl.replace(/[^/]*$/, "");  // dir of the manifest
 
   // Fetch each JSONL, extract the final scene.
   loaded = await Promise.all(manifest.map(async (m) => {
     try {
-      const res = await fetch(`./example-traces/suite/${m.file}`);
+      // file: absolute URL, root-relative path, or filename relative to manifest dir.
+      const traceUrl = m.file.startsWith("http") || m.file.startsWith("/")
+        ? m.file
+        : manifestBase + m.file;
+      const res = await fetch(traceUrl);
       const text = await res.text();
       const span = JSON.parse(text.split(/\r?\n/).find(l => l.trim())!);
       // Final scene = last scene event in the span's events.
@@ -149,9 +158,16 @@ function renderGrid() {
     return;
   }
 
+  const params = new URLSearchParams(location.search);
+  const manifestUrl = params.get("manifest") ?? "./example-traces/suite/manifest.json";
+  const manifestBase = manifestUrl.replace(/[^/]*$/, "");
+
   $("grid").innerHTML = visible.map(t => {
     const scene = t.finalScene ?? buildFallbackTicket(t.manifest);
-    const traceUrl = `./index.html?trace=${encodeURIComponent(`./example-traces/suite/${t.manifest.file}`)}`;
+    const file = t.manifest.file.startsWith("http") || t.manifest.file.startsWith("/")
+      ? t.manifest.file
+      : manifestBase + t.manifest.file;
+    const traceUrl = `./index.html?trace=${encodeURIComponent(file)}`;
     return renderTicketIcon(scene, { traceUrl });
   }).join("");
 }

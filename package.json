@@ -16,8 +16,18 @@
     "./greedy": "./src/greedy.ts",
     "./llm": "./src/llm.ts"
   },
+  "bin": {
+    "scenegrad": "./bin/scenegrad.ts",
+    "scenegrad-view": "./bin/scenegrad-view.ts"
+  },
   "files": [
     "src",
+    "bin",
+    "viewer/index.html",
+    "viewer/bulk.html",
+    "viewer/viewer.js",
+    "viewer/bulk.js",
+    "viewer/widgets",
     "README.md",
     "LICENSE"
   ],
