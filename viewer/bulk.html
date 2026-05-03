@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>scenegrad · bulk viewer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+    .line-clamp-2 {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .ticket-icon { transition: transform .12s, box-shadow .12s; }
+    .ticket-icon:hover { transform: translateY(-1px); }
+    .filter-chip { transition: all .12s; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+
+<header class="border-b bg-white">
+  <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="text-2xl">Δ</div>
+      <div>
+        <h1 class="text-xl font-semibold">scenegrad · bulk viewer</h1>
+        <p class="text-xs text-slate-500">See your test suite at a glance. Click any to drill in.</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-4 text-sm">
+      <a href="./index.html" class="text-slate-600 hover:text-slate-900 underline">single trace →</a>
+      <a href="https://github.com/daslabhq/scenegrad" class="text-slate-600 hover:text-slate-900 underline">GitHub →</a>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto p-6 space-y-4">
+
+  <!-- Aggregate stats -->
+  <section id="stats" class="bg-white rounded-lg border border-slate-200 p-4">
+    <div class="text-xs text-slate-500 uppercase tracking-wide mb-3">distribution</div>
+    <div id="stats-content" class="text-sm">
+      <span class="text-slate-400">loading…</span>
+    </div>
+  </section>
+
+  <!-- Filter chips -->
+  <section class="flex items-center gap-2 flex-wrap text-sm">
+    <span class="text-xs text-slate-500 uppercase tracking-wide mr-2">filter:</span>
+    <div id="filter-chips" class="flex items-center gap-2 flex-wrap"></div>
+  </section>
+
+  <!-- Grid -->
+  <section>
+    <div id="grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      <div class="text-slate-400 italic col-span-full">loading suite…</div>
+    </div>
+  </section>
+
+</main>
+
+<script type="module" src="./bulk.js"></script>
+</body>
+</html>

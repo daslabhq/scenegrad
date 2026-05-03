@@ -1,21 +1,22 @@
 /**
  * Record the scenegrad demo gif.
  *
- * One trajectory: a support-triage agent built with Vercel AI SDK.
- * Watch the gap close from 4 → 0 across 5 steps as the agent reads
- * the ticket, enriches with account context, searches the KB, and
- * escalates an enterprise customer's critical issue to VIP.
+ * Story arc:
+ *   1. Bulk view loads — 12 trajectories, see the distribution at a glance
+ *   2. Filter to escalated-vip — 3 cards remain
+ *   3. Click "All" — back to 12
+ *   4. Click into the TKT-9341 card — drills into single-trace viewer
+ *   5. Scrub through the trajectory — watch the ticket morph
  *
  * Usage:
  *   1. cd viewer && python3 -m http.server 7401 &
  *   2. bun scripts/record-demo.ts
- *   3. ffmpeg -i recording/*.webm -vf "fps=10,scale=860:-1" docs/demo.gif
  */
 
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 
-const URL = "http://localhost:7401/";
+const URL = "http://localhost:7401/bulk.html";
 const OUT_DIR = "/Users/fm/git/daslab/ios2/Daslab/oss/scenegrad/docs/demo-recording";
 mkdirSync(OUT_DIR, { recursive: true });
 
@@ -28,6 +29,32 @@ const page = await context.newPage();
 
 const wait = (ms: number) => page.waitForTimeout(ms);
 
+// Scene 1: bulk view loads
+await page.goto(URL, { waitUntil: "networkidle" });
+await wait(1700);
+
+// Scene 2: filter to vip
+await page.click('[data-filter="escalated-vip"]');
+await wait(1800);
+
+// Scene 3: back to all
+await page.click('[data-filter=""]');
+await wait(1300);
+
+// Scene 4: filter to t2 briefly
+await page.click('[data-filter="escalated-t2"]');
+await wait(1500);
+
+// Scene 5: back to all, then click TKT-9341 to drill in
+await page.click('[data-filter=""]');
+await wait(900);
+
+// Click the first card (TKT-9341)
+await page.click('a[href*="TKT-9341"]');
+await page.waitForSelector("#viewer:not(.hidden)", { timeout: 5000 });
+await wait(1400);
+
+// Scene 6: scrub through the trajectory
 async function setScrubber(idx: number) {
   await page.evaluate((i) => {
     const s = document.getElementById("scrubber") as HTMLInputElement;
@@ -36,22 +63,12 @@ async function setScrubber(idx: number) {
   }, idx);
 }
 
-await page.goto(URL, { waitUntil: "networkidle" });
-await wait(700);
-
-// Pick the support triage trajectory — the wow demo.
-await page.selectOption("#example-picker", "example-traces/scenegrad-support-triage-haiku-4-5.jsonl");
-await page.waitForSelector("#viewer:not(.hidden)");
-await wait(1500);
-
-// Scrub through every step with dwell time on each so the viewer can
-// register the scene-pane changes (green highlights on changed fields).
 const total = parseInt(await page.textContent("#step-total") ?? "0", 10);
 for (let i = 0; i < total; i++) {
   await setScrubber(i);
-  await wait(1900);
+  await wait(1700);
 }
-await wait(2200);     // hold on the final escalated state — the punchline
+await wait(1800);
 
 await context.close();
 await browser.close();

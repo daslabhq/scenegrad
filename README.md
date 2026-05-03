@@ -4,7 +4,7 @@
 
 ![scenegrad viewer](./docs/demo.gif)
 
-*Above: a support-ticket triage agent built with Vercel AI SDK + Haiku, scrubbed through 5 steps. Watch the SCENE pane: the ticket starts as `status: new` and morphs as the agent works — `enriched` fields appear after the account lookup, `kb_match` after the KB search, `status: escalated-vip` and the full reply after the routing decision. Green-highlighted rows are the fields that just changed. The agent correctly escalated an enterprise customer's critical issue to VIP — never auto-resolved it (a weight-5 cardinal-sin assertion).*
+*Above: 12 support-triage trajectories at a glance, then drill into one. The bulk view shows the distribution (3 escalated-vip in red, 6 escalated-t2 in amber, 3 auto-resolved in emerald). Filter chips narrow the grid; click any card to scrub through the full trajectory with typed widgets — Ticket card on the left shows the world morphing (`status: new` → `investigating` → `escalated-vip`, `[CRITICAL]` reply appearing), Customer card on the right materializes with ENTERPRISE badge + LTV when the agent runs `enrich_with_account`. All 12 runs cost ~$0.02 in Haiku tokens.*
 
 scenegrad is a tiny observability + evaluation substrate for AI agents. Pay only for what you use:
 

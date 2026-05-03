@@ -1,0 +1,134 @@
+[
+  {
+    "file": "TKT-9341-claude-haiku-4-5.jsonl",
+    "id": "TKT-9341",
+    "subject": "Webhook deliveries failing with 504",
+    "customer": "acme-corp",
+    "final_status": "escalated-vip",
+    "success": true,
+    "steps": 4,
+    "duration_ms": 8628,
+    "model": "claude-haiku-4-5"
+  },
+  {
+    "file": "TKT-9342-claude-haiku-4-5.jsonl",
+    "id": "TKT-9342",
+    "subject": "Production outage — payment processing down",
+    "customer": "stripe",
+    "final_status": "escalated-vip",
+    "success": true,
+    "steps": 4,
+    "duration_ms": 7474,
+    "model": "claude-haiku-4-5"
+  },
+  {
+    "file": "TKT-9343-claude-haiku-4-5.jsonl",
+    "id": "TKT-9343",
+    "subject": "Data export hung for 30 minutes",
+    "customer": "linear",
+    "final_status": "escalated-vip",
+    "success": true,
+    "steps": 4,
+    "duration_ms": 7266,
+    "model": "claude-haiku-4-5"
+  },
+  {
+    "file": "TKT-9344-claude-haiku-4-5.jsonl",
+    "id": "TKT-9344",
+    "subject": "Question about billing address change",
+    "customer": "acme-corp",
+    "final_status": "escalated-t2",
+    "success": true,
+    "steps": 4,
+    "duration_ms": 6861,
+    "model": "claude-haiku-4-5"
+  },
+  {
+    "file": "TKT-9345-claude-haiku-4-5.jsonl",
+    "id": "TKT-9345",
+    "subject": "API rate limit hit unexpectedly",
+    "customer": "smallco",
+    "final_status": "escalated-t2",
+    "success": true,
+    "steps": 4,
+    "duration_ms": 6660,
+    "model": "claude-haiku-4-5"
+  },
+  {
+    "file": "TKT-9346-claude-haiku-4-5.jsonl",
+    "id": "TKT-9346",
+    "subject": "Export failing with weird error",
+    "customer": "gardenshop-llc",
+    "final_status": "escalated-t2",
+    "success": true,
+    "steps": 4,
+    "duration_ms": 7613,
+    "model": "claude-haiku-4-5"
+  },
+  {
+    "file": "TKT-9347-claude-haiku-4-5.jsonl",
+    "id": "TKT-9347",
+    "subject": "Password reset not working",
+    "customer": "indie-dev-john",
+    "final_status": "escalated-t2",
+    "success": true,
+    "steps": 4,
+    "duration_ms": 8251,
+    "model": "claude-haiku-4-5"
+  },
+  {
+    "file": "TKT-9348-claude-haiku-4-5.jsonl",
+    "id": "TKT-9348",
+    "subject": "Forgot my password",
+    "customer": "free-user-1",
+    "final_status": "auto-resolved",
+    "success": true,
+    "steps": 4,
+    "duration_ms": 7738,
+    "model": "claude-haiku-4-5"
+  },
+  {
+    "file": "TKT-9349-claude-haiku-4-5.jsonl",
+    "id": "TKT-9349",
+    "subject": "Locked out of account",
+    "customer": "free-user-2",
+    "final_status": "auto-resolved",
+    "success": true,
+    "steps": 4,
+    "duration_ms": 7927,
+    "model": "claude-haiku-4-5"
+  },
+  {
+    "file": "TKT-9350-claude-haiku-4-5.jsonl",
+    "id": "TKT-9350",
+    "subject": "Webhook setup confusion",
+    "customer": "free-trial-acme",
+    "final_status": "auto-resolved",
+    "success": true,
+    "steps": 4,
+    "duration_ms": 7207,
+    "model": "claude-haiku-4-5"
+  },
+  {
+    "file": "TKT-9351-claude-haiku-4-5.jsonl",
+    "id": "TKT-9351",
+    "subject": "How do I update my address?",
+    "customer": "free-user-1",
+    "final_status": "escalated-t2",
+    "success": true,
+    "steps": 4,
+    "duration_ms": 9380,
+    "model": "claude-haiku-4-5"
+  },
+  {
+    "file": "TKT-9352-claude-haiku-4-5.jsonl",
+    "id": "TKT-9352",
+    "subject": "Quick password reset question",
+    "customer": "stripe",
+    "final_status": "escalated-t2",
+    "success": true,
+    "steps": 4,
+    "duration_ms": 7474,
+    "model": "claude-haiku-4-5"
+  }
+]
