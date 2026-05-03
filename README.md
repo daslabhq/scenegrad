@@ -2,6 +2,10 @@
 
 > **Drop into your agent in 2 lines. Get a scrubbable replay. Level up when you're ready.**
 
+![scenegrad viewer](./docs/demo.gif)
+
+*Above: the scenegrad viewer scrubbing through two real agent trajectories — an ARC puzzle (gradient closes 21→12→0, predicted-vs-actual drift visible at step 0) and an AutomationBench Salesforce contact update (Haiku, 5 steps, $0.001).*
+
 scenegrad is a tiny observability + evaluation substrate for AI agents. Pay only for what you use:
 
 ```ts
