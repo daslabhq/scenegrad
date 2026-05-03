@@ -68,26 +68,28 @@ const world: World = {
 // Goal — what "done" means for this triage flow
 // ---------------------------------------------------------------------------
 
-const watcher = observe<World>({
-  snapshot: async () => structuredClone(world),
+// Snapshot only the ticket — the part that mutates. customer_db and kb are
+// reference data the tools read; they don't belong in the scene timeline.
+const watcher = observe<Ticket>({
+  snapshot: async () => structuredClone(world.ticket),
 
-  goal: (s) => [
+  goal: (t) => [
     { name: "ticket_enriched_with_account_context",
-      check: (s) => ({ satisfied: !!s.ticket.enriched, gap: 1, weight: 1 }) },
+      check: (t) => ({ satisfied: !!t.enriched, gap: 1, weight: 1 }) },
 
     { name: "kb_searched",
-      check: (s) => ({ satisfied: s.ticket.kb_match !== undefined, gap: 1, weight: 1 }) },
+      check: (t) => ({ satisfied: t.kb_match !== undefined, gap: 1, weight: 1 }) },
 
     { name: "ticket_routed",
-      check: (s) => ({
-        satisfied: s.ticket.status !== "new" && s.ticket.status !== "investigating",
+      check: (t) => ({
+        satisfied: t.status !== "new" && t.status !== "investigating",
         gap: 1, weight: 2,
       }) },
 
     { name: "enterprise_ticket_must_escalate",
-      check: (s) => {
-        const isEnterprise = s.ticket.enriched?.tier === "enterprise";
-        const wasAutoResolved = s.ticket.status === "auto-resolved";
+      check: (t) => {
+        const isEnterprise = t.enriched?.tier === "enterprise";
+        const wasAutoResolved = t.status === "auto-resolved";
         return {
           satisfied: !(isEnterprise && wasAutoResolved),
           gap: (isEnterprise && wasAutoResolved) ? 1 : 0,
@@ -187,6 +189,8 @@ console.log(`\nTicket: ${world.ticket.id} — "${world.ticket.subject}"`);
 console.log(`Customer: ${world.ticket.customer}`);
 console.log(`Body: ${world.ticket.body}\n`);
 
+// Take an initial snapshot so the viewer can show the world before step 0.
+await watcher.takeSnapshot();
 const initial = await watcher.status();
 console.log(`[scenegrad: ${initial.satisfied.length}/${initial.assertions.length} done]\n`);
 
@@ -302,6 +306,18 @@ const span = {
         "scene.description": `step ${t.step}`,
       },
     });
+    // The killer event — the actual world state after this step.
+    if (t.scene_after !== undefined) {
+      out.push({
+        name: "scene.set", time_ns: ts_ns + 2,
+        attributes: {
+          "scene.key": "scene", "scene.kind": "actual",
+          "scene.value": JSON.stringify(t.scene_after),
+          "scene.value.type": "json", "scene.value.size": JSON.stringify(t.scene_after).length, "scene.commit_hash": "",
+          "scene.description": `world state after step ${t.step}`,
+        },
+      });
+    }
     return out;
   }),
 };

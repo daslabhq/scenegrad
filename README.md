@@ -4,7 +4,7 @@
 
 ![scenegrad viewer](./docs/demo.gif)
 
-*Above: the scenegrad viewer scrubbing through two real agent trajectories — an ARC puzzle (gradient closes 21→12→0, predicted-vs-actual drift visible at step 0) and an AutomationBench Salesforce contact update (Haiku, 5 steps, $0.001).*
+*Above: a support-ticket triage agent built with Vercel AI SDK + Haiku, scrubbed through 5 steps. Watch the SCENE pane: the ticket starts as `status: new` and morphs as the agent works — `enriched` fields appear after the account lookup, `kb_match` after the KB search, `status: escalated-vip` and the full reply after the routing decision. Green-highlighted rows are the fields that just changed. The agent correctly escalated an enterprise customer's critical issue to VIP — never auto-resolved it (a weight-5 cardinal-sin assertion).*
 
 scenegrad is a tiny observability + evaluation substrate for AI agents. Pay only for what you use:
 
@@ -177,13 +177,13 @@ ANTHROPIC_API_KEY=... bun examples/inbox.ts                        # LLMSolver, 
 
 v0.0.1 — substrate types, `defineEnv`, `observe` (tiers 0/1/2), `trace.start()` (tier-0 alias), `GreedySolver`, `LLMSolver`, JSONL trace format, viewer scaffold.
 
-Reference benches live in [scene-bench](https://github.com/daslabhq/scene-bench): ARC-trajectory ships first; AutomationBench (806 real tasks); S4Bench (SAP) and LeRobot (robotics) follow.
+Reference benches live in [scenebench](https://github.com/daslabhq/scenebench): ARC-trajectory ships first; AutomationBench (806 real tasks); S4Bench (SAP) and LeRobot (robotics) follow.
 
 ## Related
 
 - [`scene-otel`](https://github.com/daslabhq/scene-otel) — wire format scenegrad emits trajectories in
-- [`scene-state`](https://github.com/daslabhq/scene-state) — typed scene shapes + multi-size widgets that render trajectories visually
-- [`scene-bench`](https://github.com/daslabhq/scene-bench) — benchmarks built on scenegrad
+- [`scenecast`](https://github.com/daslabhq/scenecast) — typed scene shapes + multi-size widgets that render trajectories visually
+- [`scenebench`](https://github.com/daslabhq/scenebench) — benchmarks built on scenegrad
 - [`autocompile`](https://github.com/mirkokiefer/autocompile) — observes accumulated trajectories, hardens patterns to code
 
 ## License

@@ -19,11 +19,24 @@ function spanToTrajectory(span) {
   const steps = [];
   let currentIntent;
   let stepNo = 0;
+  let pendingStep;
   for (const e of events) {
     const kind = e.attributes["scene.kind"];
+    const key = e.attributes["scene.key"];
     if (kind === "intent") {
       currentIntent = e;
-    } else if (kind === "actual" && e.attributes["scene.key"] === "distance") {
+      continue;
+    }
+    if (kind === "actual" && key === "scene") {
+      let scene;
+      try {
+        scene = JSON.parse(e.attributes["scene.value"]);
+      } catch {}
+      if (pendingStep)
+        pendingStep.scene_after = scene;
+      continue;
+    }
+    if (kind === "actual" && key === "distance") {
       let payload = {};
       try {
         payload = JSON.parse(e.attributes["scene.value"]);
@@ -34,7 +47,7 @@ function spanToTrajectory(span) {
         if (intent)
           intentPayload = JSON.parse(intent.attributes["scene.value"]);
       } catch {}
-      steps.push({
+      pendingStep = {
         step_no: stepNo++,
         tool: intentPayload?.tool,
         predicted_delta: intentPayload?.predicted_delta,
@@ -44,7 +57,8 @@ function spanToTrajectory(span) {
         delta: Number(payload.delta ?? 0),
         description: e.attributes["scene.description"],
         raw: { intent, actual: e }
-      });
+      };
+      steps.push(pendingStep);
       currentIntent = undefined;
     }
   }
@@ -185,8 +199,81 @@ function renderStep(i) {
     intent.innerHTML = `<div class="text-slate-400 italic">no tool call at this step</div>`;
   }
   renderAssertionsPane(step);
+  renderScenePane(i);
   $("raw-step").textContent = JSON.stringify(step, null, 2);
   $("scrubber").value = String(i);
+}
+function renderScenePane(stepIdx) {
+  const pane = $("scene-pane");
+  if (!current) {
+    pane.innerHTML = "—";
+    return;
+  }
+  const step = current.steps[stepIdx];
+  const scene = step?.scene_after;
+  if (!scene || typeof scene !== "object") {
+    pane.innerHTML = `<div class="text-slate-400 italic">no scene snapshot at this step</div>`;
+    return;
+  }
+  let prev;
+  for (let i = stepIdx - 1;i >= 0; i--) {
+    if (current.steps[i]?.scene_after) {
+      prev = current.steps[i].scene_after;
+      break;
+    }
+  }
+  pane.innerHTML = `<div class="space-y-1">${renderObjectDiff(scene, prev, 0)}</div>`;
+}
+var MAX_DEPTH = 4;
+function renderObjectDiff(curr, prev, depth) {
+  if (depth > MAX_DEPTH)
+    return `<span class="text-slate-400">…</span>`;
+  if (!curr || typeof curr !== "object")
+    return formatLeaf(curr);
+  if (Array.isArray(curr)) {
+    if (curr.length === 0)
+      return `<span class="text-slate-400">[]</span>`;
+    const items = curr.slice(0, 6).map((v, i) => {
+      const pv = Array.isArray(prev) ? prev[i] : undefined;
+      const changed = JSON.stringify(v) !== JSON.stringify(pv);
+      return `<div class="ml-4 ${changed ? "bg-emerald-100/70 rounded px-1" : ""}">${renderObjectDiff(v, pv, depth + 1)}</div>`;
+    }).join("");
+    const more = curr.length > 6 ? `<div class="ml-4 text-slate-400 text-xs">… ${curr.length - 6} more</div>` : "";
+    return `<span class="text-slate-400">[</span>${items}${more}<span class="text-slate-400">]</span>`;
+  }
+  const keys = Object.keys(curr);
+  if (keys.length === 0)
+    return `<span class="text-slate-400">{}</span>`;
+  const rows = keys.map((k) => {
+    const v = curr[k];
+    const pv = prev?.[k];
+    const changed = JSON.stringify(v) !== JSON.stringify(pv);
+    const label = `<span class="text-slate-500">${escapeHtml(k)}:</span>`;
+    if (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0) {
+      return `<div class="${changed ? "bg-emerald-100/70 rounded px-1" : ""}">${label} <span class="text-slate-400">{}</span></div>`;
+    }
+    if (Array.isArray(v) && v.length === 0) {
+      return `<div class="${changed ? "bg-emerald-100/70 rounded px-1" : ""}">${label} <span class="text-slate-400">[]</span></div>`;
+    }
+    if (v && typeof v === "object") {
+      return `<div class="${changed ? "bg-emerald-100/70 rounded px-1" : ""}">${label}<div class="ml-3">${renderObjectDiff(v, pv, depth + 1)}</div></div>`;
+    }
+    return `<div class="${changed ? "bg-emerald-100/70 rounded px-1" : ""}">${label} ${formatLeaf(v)}</div>`;
+  }).join("");
+  return rows;
+}
+function formatLeaf(v) {
+  if (v === undefined || v === null)
+    return `<span class="text-slate-400">${v === null ? "null" : "undefined"}</span>`;
+  if (typeof v === "boolean")
+    return `<span class="text-violet-600">${v}</span>`;
+  if (typeof v === "number")
+    return `<span class="text-blue-700">${v}</span>`;
+  if (typeof v === "string") {
+    const truncated = v.length > 120 ? v.slice(0, 120) + "…" : v;
+    return `<span class="text-emerald-700">"${escapeHtml(truncated)}"</span>`;
+  }
+  return `<span>${escapeHtml(String(v))}</span>`;
 }
 function renderAssertionsPane(_step) {
   const pane = $("assertions-pane");

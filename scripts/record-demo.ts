@@ -21,8 +21,8 @@ mkdirSync(OUT_DIR, { recursive: true });
 
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({
-  viewport: { width: 1280, height: 760 },
-  recordVideo: { dir: OUT_DIR, size: { width: 1280, height: 760 } },
+  viewport: { width: 1280, height: 1100 },
+  recordVideo: { dir: OUT_DIR, size: { width: 1280, height: 1100 } },
 });
 const page = await context.newPage();
 
@@ -44,13 +44,14 @@ await page.selectOption("#example-picker", "example-traces/scenegrad-support-tri
 await page.waitForSelector("#viewer:not(.hidden)");
 await wait(1500);
 
-// Scrub through every step with dwell time on each.
+// Scrub through every step with dwell time on each so the viewer can
+// register the scene-pane changes (green highlights on changed fields).
 const total = parseInt(await page.textContent("#step-total") ?? "0", 10);
 for (let i = 0; i < total; i++) {
   await setScrubber(i);
-  await wait(1400);   // dwell so viewer can register what changed
+  await wait(1900);
 }
-await wait(1800);     // hold on the final state
+await wait(2200);     // hold on the final escalated state — the punchline
 
 await context.close();
 await browser.close();

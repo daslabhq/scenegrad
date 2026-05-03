@@ -118,10 +118,8 @@
       <div id="step-markers" class="mt-2 flex gap-0.5"></div>
     </div>
 
-    <!-- Two-column main layout -->
+    <!-- Action + goal progress row -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-      <!-- Left: action this step (tool + reasoning) -->
       <div class="bg-white rounded-lg border border-slate-200 p-4 md:col-span-2">
         <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">action</div>
         <div id="intent-pane" class="text-sm space-y-2">
@@ -129,10 +127,22 @@
         </div>
       </div>
 
-      <!-- Right: goal progress -->
       <div class="bg-white rounded-lg border border-slate-200 p-4">
         <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">goal progress</div>
         <div id="assertions-pane" class="space-y-1.5 text-sm">—</div>
+      </div>
+    </div>
+
+    <!-- Scene state — the world after this step -->
+    <div class="bg-white rounded-lg border border-slate-200 p-4">
+      <div class="flex items-baseline justify-between mb-2">
+        <div class="text-xs text-slate-500 uppercase tracking-wide">scene <span class="ml-1 text-slate-400 normal-case">— world state after this step</span></div>
+        <div class="text-[11px] text-slate-400">
+          <span class="inline-block w-2 h-2 bg-emerald-200 rounded-sm align-middle mr-1"></span> changed this step
+        </div>
+      </div>
+      <div id="scene-pane" class="text-sm font-mono">
+        <div class="text-slate-400 italic">no scene captured</div>
       </div>
     </div>
 
