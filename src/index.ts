@@ -30,3 +30,14 @@ export type {
 export { GreedySolver } from "./greedy.js";
 export { LLMSolver } from "./llm.js";
 export { defineEnv, type EnvSpec } from "./define.js";
+
+// Observer mode — the primary integration for production agent loops.
+// Your loop drives tools; scenegrad observes the world.
+export {
+  observe,
+  Watcher,
+  type ObserveSpec,
+  type ObserverStatus,
+  type ObserverEvent,
+  type TrajectoryStep as ObserverTrajectoryStep,
+} from "./observe.js";

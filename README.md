@@ -1,23 +1,54 @@
 # scenegrad
 
-> **TDD for agents.** Write the assertion. Run. Watch the gap. Tighten.
+> **A shared view of progress, for the agent and the developer.**
+> Define your goal as assertions over the world. The agent reads `status()` to know what's left to do; you read the trajectory to see what happened. Same artifact, both modes.
+
+Drop alongside Vercel AI SDK, LangChain, or your own loop in 5 lines. The agent stays in its existing loop; scenegrad observes the world and gives both sides a runtime-verified checklist.
 
 ```ts
-import { defineEnv, GreedySolver } from "scenegrad";
+import { observe } from "scenegrad";
 
-const counter = defineEnv({
-  init:  () => ({ count: 0 }),
-  goal:  (s) => [{ name: "count = 5",
-                   check: s => ({ satisfied: s.count === 5, gap: 5 - s.count }) }],
-  tools: () => [{ name: "inc", args: {} }, { name: "dec", args: {} }],
-  step:  (s, t) => t.name === "inc" ? { count: s.count + 1 } : { count: s.count - 1 },
+const watcher = observe({
+  snapshot: async () => ({
+    user:        await db.users.findOne({ session_id }),
+    welcome_sent: await emails.exists({ template: "welcome", user }),
+  }),
+  goal: (s) => [
+    { name: "name_collected",   check: (s) => ({ satisfied: !!s.user?.name,         gap: 1 }) },
+    { name: "email_collected",  check: (s) => ({ satisfied: !!s.user?.email,        gap: 1 }) },
+    { name: "role_specified",   check: (s) => ({ satisfied: !!s.user?.role,         gap: 1 }) },
+    { name: "welcome_email_sent", check: (s) => ({ satisfied: s.welcome_sent,        gap: 1 }) },
+  ],
 });
 
-const result = await new GreedySolver().solve(counter, "default");
-// → success: true, steps: 5, gap closes 5→4→3→2→1→0
+// In your existing agent loop, each turn:
+const status = await watcher.status();
+// status.unmet → use it in the system prompt so the agent knows what's left
+
+const response = await yourAgent({
+  systemPrompt: `Onboarding. Still unmet: ${status.unmet.map(a => a.name).join(", ")}.`,
+  // ... the rest of your loop, untouched
+});
+
+await watcher.recordStep({ tool: chosenTool });  // re-snapshots, computes delta
 ```
 
-Four functions. The framework derives the metric, the loop, the trace, and the comparable result shape across runs and models.
+The agent's checklist is now grounded in actual world state — not its working memory. When you evaluate post-hoc, you read the same assertions back through `watcher.trajectory()`. Spec written once; serves both runtime guidance and evaluation.
+
+---
+
+## Two modes — observer + solver
+
+scenegrad has two ways to interact with your work. Pick whichever fits what you're building:
+
+| | **Observer mode** | **Solver mode** |
+|---|---|---|
+| Who drives the loop | Your agent (Vercel AI SDK / LangChain / custom) | scenegrad's solver |
+| Required env methods | `snapshot`, `goal` | `init`, `goal`, `tools`, `step` |
+| When to use | Production agents, real apps, conversational flows | Benchmarks, demos, controlled tests |
+| Key API | `watcher.status()`, `watcher.recordStep()` | `solver.solve(env, taskId)` |
+
+Most production users want **observer mode**. Your agent loop stays the same; scenegrad observes the world and gives the agent a runtime checklist via `status()`. Solver mode is for benches where scenegrad picks the actions.
 
 ---
 
@@ -176,13 +207,16 @@ npm install scenegrad
 npm install @anthropic-ai/sdk
 
 # try the examples
-bun examples/counter.ts                                  # no LLM, ~0ms
-ANTHROPIC_API_KEY=... bun examples/inbox.ts              # 3-msg inbox, ~5s
+bun examples/counter.ts                                  # no LLM, substrate-only
+ANTHROPIC_API_KEY=... bun examples/inbox.ts              # 3-msg inbox, solver mode
+ANTHROPIC_API_KEY=... bun examples/onboarding.ts         # multi-turn agent, observer mode
 ```
+
+The onboarding example is the canonical observer-mode demo: a 4-turn conversation with a Haiku-backed agent collecting name / email / role / welcome-email. Watch as `status()` injection in the system prompt keeps the agent on track — never asking for collected fields, always moving toward the next unmet item.
 
 ## Status
 
-v0.0.1 — substrate types, defineEnv, GreedySolver, LLMSolver (Anthropic), JSONL trace format.
+v0.0.1 — substrate types, defineEnv, observe (observer mode + Watcher), GreedySolver, LLMSolver (Anthropic), JSONL trace format.
 
 Reference benches live in [scene-bench](https://github.com/daslabhq/scene-bench): ARC-trajectory ships first; AutomationBench next (806 real tasks); S4Bench (SAP) and LeRobot (robotics) follow.
 

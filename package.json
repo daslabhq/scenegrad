@@ -10,6 +10,7 @@
     ".":           "./src/index.ts",
     "./env":       "./src/env.ts",
     "./define":    "./src/define.ts",
+    "./observe":   "./src/observe.ts",
     "./solver":    "./src/solver.ts",
     "./greedy":    "./src/greedy.ts",
     "./llm":       "./src/llm.ts"
