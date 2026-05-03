@@ -207,12 +207,15 @@ npm install scenegrad
 npm install @anthropic-ai/sdk
 
 # try the examples
-bun examples/counter.ts                                  # no LLM, substrate-only
-ANTHROPIC_API_KEY=... bun examples/inbox.ts              # 3-msg inbox, solver mode
-ANTHROPIC_API_KEY=... bun examples/onboarding.ts         # multi-turn agent, observer mode
+bun examples/counter.ts                                       # no LLM, substrate-only
+ANTHROPIC_API_KEY=... bun examples/inbox.ts                   # 3-msg inbox, solver mode
+ANTHROPIC_API_KEY=... bun examples/onboarding.ts              # multi-turn agent, observer mode
+ANTHROPIC_API_KEY=... bun examples/support-triage-aisdk.ts    # Vercel AI SDK + observer mode
 ```
 
-The onboarding example is the canonical observer-mode demo: a 4-turn conversation with a Haiku-backed agent collecting name / email / role / welcome-email. Watch as `status()` injection in the system prompt keeps the agent on track — never asking for collected fields, always moving toward the next unmet item.
+**Vercel AI SDK demo** (`support-triage-aisdk.ts`) — a real support-ticket triage agent built with Vercel AI SDK's `generateText` + `tool()`. The agent reads a ticket, enriches with account data, searches the KB, then routes to auto-resolve / T2 / VIP. scenegrad observes via one-line `onStepFinish` and injects `status()` into the system prompt every step via `prepareStep`. Includes a weight-5 cardinal-sin assertion ("enterprise tickets must NOT be auto-resolved") — the agent obeys it because the gap math punishes violation. ~$0.001 per run on Haiku.
+
+**Onboarding demo** (`onboarding.ts`) — 4-turn conversational agent collecting name / email / role / welcome-email. Watch `status()` injection keep the agent moving forward — never asking for collected fields, always targeting the next unmet item.
 
 ## Status
 
