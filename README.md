@@ -58,6 +58,8 @@ npx scenegrad view ./traces           # bulk view of every JSONL in ./traces
 npx scenegrad view ./traces/run.jsonl # single-trace view of one file
 ```
 
+> **v0.0.1 note:** the CLI requires [Bun](https://bun.sh) on your PATH (the bin scripts are TypeScript with a `#!/usr/bin/env bun` shebang). Node-compatible bin compilation lands in v0.0.2.
+
 That's it. Drop in, run, view your runs in a browser. No goal to design. No assertions to write. No restructuring of your agent.
 
 When you want more — add a `snapshot()` to capture world state between calls. Add a `goal()` of assertions to measure gap closure. Each level is opt-in.
