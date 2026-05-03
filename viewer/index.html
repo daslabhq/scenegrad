@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>scenegrad · trajectory viewer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+    .scrubber::-webkit-slider-thumb {
+      appearance: none; width: 16px; height: 16px; border-radius: 50%;
+      background: #6366f1; cursor: pointer; border: 2px solid white;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .scrubber::-moz-range-thumb {
+      width: 16px; height: 16px; border-radius: 50%; background: #6366f1;
+      cursor: pointer; border: 2px solid white;
+    }
+    .step-marker { transition: background-color .15s; }
+    .grid-cell { width: 22px; height: 22px; display: inline-block; }
+    .gap-bar { transition: width .25s ease-out; }
+    .gap-bar.drift { background: linear-gradient(90deg, #ef4444 0%, #ef4444 var(--drift-pct, 0%), #6366f1 var(--drift-pct, 0%)); }
+    .json-pre { white-space: pre-wrap; word-wrap: break-word; max-height: 380px; overflow: auto; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+
+<header class="border-b bg-white">
+  <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="text-2xl">Δ</div>
+      <div>
+        <h1 class="text-xl font-semibold">scenegrad · trajectory viewer</h1>
+        <p class="text-xs text-slate-500">Scrub through agent runs. Watch the gap close.</p>
+      </div>
+    </div>
+    <a href="https://github.com/daslabhq/scenegrad" class="text-sm text-slate-600 hover:text-slate-900 underline">GitHub →</a>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto p-6">
+
+  <!-- Loader -->
+  <section id="loader" class="space-y-4">
+    <div class="bg-white rounded-lg border border-slate-200 p-6">
+      <h2 class="font-semibold mb-3">Load a trajectory</h2>
+      <div class="flex gap-3 flex-wrap items-center">
+        <select id="example-picker" class="border border-slate-300 rounded px-3 py-2 text-sm bg-white">
+          <option value="">Pick an example trajectory…</option>
+          <optgroup label="ARC trajectory">
+            <option value="example-traces/scenegrad-arc-recolor_then_mirror-claude-haiku-4-5.jsonl">recolor + mirror · Haiku · 2 steps</option>
+            <option value="example-traces/scenegrad-arc-recolor_1_to_2-claude-haiku-4-5.jsonl">recolor 1→2 · Haiku · 1 step</option>
+            <option value="example-traces/scenegrad-arc-mirror_horizontal-claude-haiku-4-5.jsonl">mirror horizontal · Haiku · 1 step</option>
+            <option value="example-traces/scenegrad-arc-recolor_then_mirror-greedy.jsonl">recolor + mirror · greedy baseline</option>
+          </optgroup>
+          <optgroup label="AutomationBench">
+            <option value="example-traces/scenegrad-ab-simple_email_sf_contact_phone_update-claude-haiku-4-5.jsonl">simple · Jordan Lee phone update · Haiku · 5 steps</option>
+          </optgroup>
+        </select>
+        <label class="border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-pointer hover:bg-slate-50">
+          Upload .jsonl
+          <input type="file" accept=".jsonl,.json,.txt" class="hidden" id="file-input" />
+        </label>
+      </div>
+      <p class="text-xs text-slate-500 mt-3">Or drop a .jsonl file anywhere on this page.</p>
+    </div>
+  </section>
+
+  <!-- Viewer -->
+  <section id="viewer" class="hidden space-y-4 mt-2">
+
+    <!-- Trace meta -->
+    <div class="bg-white rounded-lg border border-slate-200 p-4">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <div class="text-xs text-slate-500 uppercase tracking-wide">trace</div>
+          <div class="font-semibold" id="trace-name">—</div>
+        </div>
+        <div class="flex gap-6 text-sm">
+          <div><span class="text-slate-400">model:</span> <span class="mono" id="meta-model">—</span></div>
+          <div><span class="text-slate-400">steps:</span> <span class="mono" id="meta-steps">—</span></div>
+          <div><span class="text-slate-400">duration:</span> <span class="mono" id="meta-duration">—</span></div>
+          <div>
+            <span class="text-slate-400">result:</span>
+            <span id="meta-success" class="font-semibold">—</span>
+          </div>
+        </div>
+        <button id="reset-btn" class="text-sm text-slate-500 underline hover:text-slate-900">load another</button>
+      </div>
+    </div>
+
+    <!-- Gap-closure curve -->
+    <div class="bg-white rounded-lg border border-slate-200 p-4">
+      <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">gap-closure curve</div>
+      <svg id="gap-curve" width="100%" height="80" class="block"></svg>
+    </div>
+
+    <!-- Scrubber -->
+    <div class="bg-white rounded-lg border border-slate-200 p-4">
+      <div class="flex items-center justify-between mb-3 text-sm">
+        <div>
+          <span class="text-slate-400">step</span>
+          <span class="font-semibold mono text-base" id="step-current">0</span>
+          <span class="text-slate-400">/</span>
+          <span class="mono text-slate-500" id="step-total">0</span>
+        </div>
+        <div>
+          <span class="text-slate-400">tool:</span>
+          <span class="mono font-semibold" id="step-tool">—</span>
+        </div>
+        <div>
+          <span class="text-slate-400">d:</span>
+          <span class="mono" id="step-d-before">0</span>
+          <span class="text-slate-400">→</span>
+          <span class="mono font-semibold" id="step-d-after">0</span>
+          <span class="text-slate-400 ml-2">Δ:</span>
+          <span class="mono font-semibold" id="step-delta">0</span>
+        </div>
+      </div>
+      <input type="range" id="scrubber" class="scrubber w-full appearance-none h-1.5 bg-slate-200 rounded outline-none" min="0" max="0" step="1" value="0" />
+      <div id="step-markers" class="mt-2 flex gap-0.5"></div>
+    </div>
+
+    <!-- Two-column main layout -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+      <!-- Left: agent intent (current step) -->
+      <div class="bg-white rounded-lg border border-slate-200 p-4 md:col-span-2">
+        <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">agent intent</div>
+        <div id="intent-pane" class="text-sm space-y-2">
+          <div class="text-slate-400 italic">no intent at this step</div>
+        </div>
+      </div>
+
+      <!-- Right: assertion ticker -->
+      <div class="bg-white rounded-lg border border-slate-200 p-4">
+        <div class="text-xs text-slate-500 uppercase tracking-wide mb-2">goal assertions</div>
+        <div id="assertions-pane" class="space-y-1.5 text-sm">—</div>
+      </div>
+    </div>
+
+    <!-- Raw JSON details -->
+    <details class="bg-white rounded-lg border border-slate-200 p-4">
+      <summary class="cursor-pointer text-sm font-medium text-slate-600">raw step JSON</summary>
+      <pre class="mono text-xs mt-3 json-pre" id="raw-step">—</pre>
+    </details>
+
+  </section>
+</main>
+
+<script type="module" src="./viewer.js"></script>
+</body>
+</html>

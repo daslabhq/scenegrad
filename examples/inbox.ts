@@ -114,7 +114,7 @@ async function run(label: string, env: ReturnType<typeof defineEnv>) {
   console.log(`success=${r.success}  steps=${r.steps}  d:${r.d_initial}→${r.d_final}  ${r.duration_ms}ms`);
   for (const t of r.trajectory) {
     const tool = t.tool ? `${t.tool.name}(${JSON.stringify(t.tool.args)})` : "(none)";
-    console.log(`  #${t.step} ${tool}  d:${t.d_before}→${t.d_after}  Δ=${t.delta} pred=${t.predicted_delta}`);
+    console.log(`  #${t.step} ${tool}  d:${t.d_before}→${t.d_after}  Δ=${t.delta}`);
     if (t.reasoning) console.log(`     "${t.reasoning}"`);
   }
 }

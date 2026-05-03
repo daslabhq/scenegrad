@@ -11,6 +11,7 @@
     "./env": "./src/env.ts",
     "./define": "./src/define.ts",
     "./observe": "./src/observe.ts",
+    "./trace": "./src/trace.ts",
     "./solver": "./src/solver.ts",
     "./greedy": "./src/greedy.ts",
     "./llm": "./src/llm.ts"

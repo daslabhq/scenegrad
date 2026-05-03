@@ -85,7 +85,6 @@ export class LLMSolver<S, T extends ToolCall = ToolCall> implements Solver<S, T>
         d_before,
         d_after,
         delta: d_before - d_after,
-        predicted_delta: choice.predicted_delta,
         reasoning: choice.reasoning,
         ok: result.ok,
         error: result.error,
@@ -113,7 +112,7 @@ export class LLMSolver<S, T extends ToolCall = ToolCall> implements Solver<S, T>
     goal: Goal<unknown>,
     tools: T2[],
     d_before: number,
-  ): Promise<{ tool: T2; predicted_delta: number; reasoning: string } | null> {
+  ): Promise<{ tool: T2; reasoning: string } | null> {
     const assertions = checkAll(scene, goal);
     const unmet = assertions.filter(a => !a.satisfied);
 
@@ -140,7 +139,6 @@ ${toolsText}
 Pick exactly one tool that should reduce distance. Respond with strict JSON only:
 {
   "tool_index": <integer 0..${tools.length - 1}>,
-  "predicted_delta": <number, your estimate of how much distance will drop>,
   "reasoning": "<one sentence>"
 }
 
@@ -167,7 +165,6 @@ JSON only, no other text.`;
 
       return {
         tool: tools[idx]!,
-        predicted_delta: Number(parsed.predicted_delta) || 0,
         reasoning: String(parsed.reasoning ?? ""),
       };
     } catch (e) {

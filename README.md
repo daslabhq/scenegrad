@@ -1,178 +1,116 @@
 # scenegrad
 
-> **A shared view of progress, for the agent and the developer.**
-> Define your goal as assertions over the world. The agent reads `status()` to know what's left to do; you read the trajectory to see what happened. Same artifact, both modes.
+> **Drop into your agent in 2 lines. Get a scrubbable replay. Level up when you're ready.**
 
-Drop alongside Vercel AI SDK, LangChain, or your own loop in 5 lines. The agent stays in its existing loop; scenegrad observes the world and gives both sides a runtime-verified checklist.
+scenegrad is a tiny observability + evaluation substrate for AI agents. Pay only for what you use:
 
 ```ts
-import { observe } from "scenegrad";
+import { trace } from "scenegrad";
 
-const watcher = observe({
+const t = trace.start();
+
+// your existing Vercel AI SDK / LangChain / custom loop, untouched:
+const result = await generateText({
+  model: anthropic("claude-haiku-4-5"),
+  tools: { /* your tools, unchanged */ },
+  onStepFinish: t.captureStep,         // ← only addition
+  prompt: "...",
+});
+
+t.dump("./traces/run.jsonl");
+```
+
+That's it. Drop in, run, scrub the trace in the [viewer](./viewer). No goal to design. No assertions to write. No restructuring of your agent.
+
+When you want more — add a `snapshot()` to capture world state between calls. Add a `goal()` of assertions to measure gap closure. Each level is opt-in.
+
+---
+
+## The four-tier ladder
+
+| Tier | What you write | What you get |
+|---|---|---|
+| **0 — trace** | `trace.start()` + one hook | Tool-call timeline, scrubbable. Replaces logs. |
+| **1 — + snapshot** | Add `snapshot: () => fetchWorld()` | World deltas between calls. See *what changed*, not just what was called. |
+| **2 — + goal** | Add `goal: (s) => [...assertions]` | Gap-closure curve, drift detection, runtime `status()` for agent guidance. |
+| **3 — + solver** | Use `defineEnv` + `LLMSolver` / `GreedySolver` | scenegrad drives the loop — for benches, comparison, leaderboards. |
+
+The same trajectory format flows through all four tiers. You can adopt at tier 0, level up months later as you understand your agent's failure modes.
+
+---
+
+## Tier 1 — add a snapshot
+
+When tools mutate external state (DBs, APIs, CRMs, queues), seeing what *changed* is more useful than seeing what was *called*. Pass a `snapshot` function:
+
+```ts
+const t = trace.start({
   snapshot: async () => ({
     user:        await db.users.findOne({ session_id }),
-    welcome_sent: await emails.exists({ template: "welcome", user }),
+    welcome_sent: await emails.exists({ template: "welcome" }),
   }),
+});
+```
+
+Now each step in the trajectory captures both `scene_before` and `scene_after`. The viewer can render the world delta per step.
+
+---
+
+## Tier 2 — add a goal, get drift detection + status()
+
+Define what "done" looks like as assertions:
+
+```ts
+const watcher = observe({
+  snapshot: async () => fetchWorld(),
   goal: (s) => [
-    { name: "name_collected",   check: (s) => ({ satisfied: !!s.user?.name,         gap: 1 }) },
-    { name: "email_collected",  check: (s) => ({ satisfied: !!s.user?.email,        gap: 1 }) },
-    { name: "role_specified",   check: (s) => ({ satisfied: !!s.user?.role,         gap: 1 }) },
-    { name: "welcome_email_sent", check: (s) => ({ satisfied: s.welcome_sent,        gap: 1 }) },
+    { name: "name_collected",   check: (s) => ({ satisfied: !!s.user?.name,        gap: 1 }) },
+    { name: "email_collected",  check: (s) => ({ satisfied: !!s.user?.email,       gap: 1 }) },
+    { name: "role_specified",   check: (s) => ({ satisfied: !!s.user?.role,        gap: 1 }) },
+    { name: "welcome_email_sent", check: (s) => ({ satisfied: s.welcome_sent,       gap: 1 }) },
   ],
 });
 
-// In your existing agent loop, each turn:
+// In your existing loop, each turn:
 const status = await watcher.status();
-// status.unmet → use it in the system prompt so the agent knows what's left
 
-const response = await yourAgent({
-  systemPrompt: `Onboarding. Still unmet: ${status.unmet.map(a => a.name).join(", ")}.`,
-  // ... the rest of your loop, untouched
+const result = await generateText({
+  model: anthropic("..."),
+  system: `Onboarding. Still unmet: ${status.unmet.map(a => a.name).join(", ")}.`,
+  tools: { /* unchanged */ },
+  onStepFinish: async ({ toolCalls }) => {
+    for (const c of toolCalls ?? [])
+      await watcher.recordStep({ tool: { name: c.toolName, args: c.input } });
+  },
+});
+```
+
+The agent's checklist is now **grounded in actual world state — not its working memory.** When you evaluate post-hoc, you read the same assertions back through `watcher.trajectory()`. Spec written once; serves both runtime guidance and evaluation.
+
+This is also TDD-shaped agent development: write the assertion → run → watch the gap → tighten. See `examples/inbox.ts` for the canonical three-iteration progression.
+
+---
+
+## Tier 3 — solver mode, for benches
+
+When you want scenegrad to drive the loop (for benchmarks, comparison across models, controlled tests):
+
+```ts
+import { defineEnv, LLMSolver, GreedySolver } from "scenegrad";
+
+const task = defineEnv({
+  init:  () => ({ count: 0 }),
+  goal:  (s) => [{ name: "count = 5",
+                   check: s => ({ satisfied: s.count === 5, gap: 5 - s.count }) }],
+  tools: () => [{ name: "inc" }, { name: "dec" }],
+  step:  (s, t) => t.name === "inc" ? { count: s.count + 1 } : { count: s.count - 1 },
 });
 
-await watcher.recordStep({ tool: chosenTool });  // re-snapshots, computes delta
+await new GreedySolver().solve(task, "default");           // baseline
+await new LLMSolver({ model: "claude-haiku-4-5" }).solve(task, "default");  // LLM-driven
 ```
 
-The agent's checklist is now grounded in actual world state — not its working memory. When you evaluate post-hoc, you read the same assertions back through `watcher.trajectory()`. Spec written once; serves both runtime guidance and evaluation.
-
----
-
-## Two modes — observer + solver
-
-scenegrad has two ways to interact with your work. Pick whichever fits what you're building:
-
-| | **Observer mode** | **Solver mode** |
-|---|---|---|
-| Who drives the loop | Your agent (Vercel AI SDK / LangChain / custom) | scenegrad's solver |
-| Required env methods | `snapshot`, `goal` | `init`, `goal`, `tools`, `step` |
-| When to use | Production agents, real apps, conversational flows | Benchmarks, demos, controlled tests |
-| Key API | `watcher.status()`, `watcher.recordStep()` | `solver.solve(env, taskId)` |
-
-Most production users want **observer mode**. Your agent loop stays the same; scenegrad observes the world and gives the agent a runtime checklist via `status()`. Solver mode is for benches where scenegrad picks the actions.
-
----
-
-## The thinking framework
-
-We sense the scene / world now. We make assertions on it — sensor values, query responses, photos, descriptions. **It's always an *image of* the scene, not the scene itself.**
-
-We have a future scene vaguely in mind. So we assert that as best we can. The diff between now and then is the gradient. Tools are actions that close it. We make progress, re-evaluate, sometimes redefine the goal as we learn. Reality is complex; the loop is simple.
-
-scenegrad gives this loop a substrate:
-
-| Layer | What you bring | What scenegrad gives you |
-|---|---|---|
-| 1. Mental model | The framing | Vocabulary: scene, goal, gradient, drift |
-| 2. Scene description | Sensed data, typed | Trajectory format, scrubbable replay |
-| 3. Distance / diff | Domain assertion impl (NL, visual, code) | `Assertion<S>` returning satisfied + gap + structured diff |
-| 4. Action derivation | Your toolkit | Tool simulation, gap-closure ranking, swap-in solvers |
-| 5. Execution | Your agent loop OR our solvers | Step-by-step trajectory, drift measurement |
-| 6. Learning | Your analytics OR autocompile | Common shape so patterns find themselves |
-
-Two gradients flow through this: **the agent's** (closing scene-now to scene-then per step) and **yours** (closing the spec to reality, by tightening assertions when behavior surprises you). Both are gradient descent. Both happen in the same framework.
-
----
-
-## TDD for agents — a real example
-
-Take a 3-message inbox. Goal: clear unread mail. Three tools: archive, flag, reply.
-
-### Iteration 1 — minimum spec
-
-```ts
-const inbox = defineEnv({
-  init: () => ({ messages: [
-    { id: 1, from: "boss@co",     subject: "Q3 plan?",      status: "unread" },
-    { id: 2, from: "spam@x.com",  subject: "YOU WON!!!",    status: "unread" },
-    { id: 3, from: "calendar@co", subject: "Mtg 2pm tmrw",  status: "unread" },
-  ]}),
-
-  goal: () => [{
-    name: "no unread messages",
-    check: (s) => {
-      const unread = s.messages.filter(m => m.status === "unread").length;
-      return { satisfied: unread === 0, gap: unread };
-    },
-  }],
-
-  tools: (s) => s.messages
-    .filter(m => m.status === "unread")
-    .flatMap(m => [
-      { name: "archive", args: { id: m.id } },
-      { name: "flag",    args: { id: m.id } },
-      { name: "reply",   args: { id: m.id } },
-    ]),
-
-  step: (s, t) => ({
-    messages: s.messages.map(m =>
-      m.id === t.args.id ? { ...m, status: t.name } : m
-    ),
-  }),
-});
-
-await new LLMSolver({ model: "claude-haiku-4-5" }).solve(inbox, "default");
-// → success: true (gap 3→0). But...
-```
-
-Run it. Some models (especially smaller ones) will pick the path of least resistance: **archive everything**. Gap closes 3→0. ✓ technically. ✗ in spirit. Your boss's Q3 question got deleted.
-
-### Iteration 2 — caught the over-archiver
-
-You watch the trajectory, see the violation, add an assertion that catches it:
-
-```ts
-goal: () => [
-  { name: "no unread messages", check: ... },
-  { name: "important mail not archived (flag or reply only)",
-    check: (s) => {
-      const wrongly_archived = s.messages.filter(m =>
-        m.status === "archived" && isImportantSender(m.from));
-      return { satisfied: wrongly_archived.length === 0,
-               gap: wrongly_archived.length,
-               weight: 5 };  // ← archiving boss is 5x worse than leaving unread
-    } },
-],
-```
-
-Re-run. Now if the agent archives `boss@co`, gap goes from 3 → 2+5 = 7. Distance *increased*. The greedy baseline would never pick that move; if your LLM does, you see it immediately and the trajectory is comparable across runs.
-
-### Iteration 3 — caught the lazy replier
-
-Inspecting the new trace: the agent replied to `calendar@co`, but the reply body was empty. Add:
-
-```ts
-{ name: "replies have non-empty body",
-  check: (s) => {
-    const empty_replies = s.messages.filter(m =>
-      m.status === "replied" && (!m.reply_body || m.reply_body.length < 10));
-    return { satisfied: empty_replies.length === 0,
-             gap: empty_replies.length, weight: 3 };
-  } },
-```
-
-Re-run. Agent must now compose real responses or take a different path.
-
-That's the loop. Three iterations, each catches a real failure mode. **Your assertion set IS the spec.** It's executable, version-controllable, regression-detectable. Future models, future prompts, future toolkit changes — same suite catches the same regressions.
-
-This is what TDD looks like for agents. You weren't doing prompt engineering; you were tightening the spec until the agent's behavior converged.
-
----
-
-## What you write vs. what scenegrad gives you
-
-| You write | scenegrad gives you |
-|---|---|
-| `init()` — initial scene | Trajectory format (scene-otel-compatible JSONL) |
-| `goal(s)` — assertions for "done" | `distance(scene, goal)` — uniform progress metric |
-| `tools(s)` — available actions | Tool simulation via `simulate()` |
-| `step(s, t)` — pure transition | Greedy + LLM solvers polymorphic over your env |
-| | Per-step gap closure rate |
-| | Predicted-vs-actual delta (drift detection) |
-| | Per-assertion satisfaction trace |
-| | Scrubbable trajectory in scene-otel viewer |
-| | Comparable result shape across solvers, models, runs |
-
-You bring the four functions. Everything else derives.
+Both solvers produce the same `SolveResult` shape. Compare them on the same env to see how much the LLM drifts from the optimal greedy baseline.
 
 ---
 
@@ -185,43 +123,57 @@ OpenTelemetry / Phoenix | A vocabulary for *what* to observe (scene + goal + dif
 Custom eval scripts | A common shape so your evals are comparable across runs, models, teams.
 System prompts to constrain behavior | A way to say "done" the framework can VERIFY, not just hope the LLM honors.
 
-scenegrad doesn't replace your agent. It instruments your task so behavior becomes measurable, comparable, and refinable.
+scenegrad doesn't replace your agent. It instruments your task so behavior becomes visible, comparable, and refinable.
 
 ---
 
 ## What scenegrad does NOT do
 
 - **Doesn't write your distance function.** Domain-specific. Sometimes hard.
-- **Doesn't induce your toolkit.** You author it; [autocompile](https://github.com/mirkokiefer/autocompile) refines.
+- **Doesn't induce your toolkit.** You author it; [autocompile](https://github.com/mirkokiefer/autocompile) refines it over time.
 - **Doesn't solve local-optima / dead-end paths.** It exposes them; your solver picks the search strategy.
 - **Doesn't replace your agent.** Your agent runs whatever loop it runs; scenegrad measures it.
 - **Doesn't unify cross-domain distance.** ARC's "12 cells off" and SAP's "3 audit controls violated" aren't directly comparable — each domain owns its units.
+- **Doesn't force the agent to predict gradients.** The natural drift signals (gap-not-closing, goal-claimed-but-unmet, vs-baseline) work without polluting the prompt.
 
 ---
 
-## Install + run
+## The thinking framework
+
+We sense the scene / world now. We make assertions on it — sensor values, query responses, photos, descriptions. **It's always an *image of* the scene, not the scene itself.**
+
+We have a future scene vaguely in mind. We assert that as best we can. The diff between now and then is the gradient. Tools are actions that close it. We make progress, re-evaluate, sometimes redefine the goal as we learn. Reality is complex; the loop is simple.
+
+Two gradients flow through this: **the agent's** (closing scene-now to scene-then per step) and **yours** (closing the spec to reality, by tightening assertions when behavior surprises you). Both are gradient descent. Both happen in the same framework.
+
+---
+
+## Install + run the examples
 
 ```bash
 npm install scenegrad
 # optional, for LLMSolver:
 npm install @anthropic-ai/sdk
+# optional, for tier-0 with Vercel AI SDK:
+npm install ai @ai-sdk/anthropic zod
 
-# try the examples
-bun examples/counter.ts                                       # no LLM, substrate-only
-ANTHROPIC_API_KEY=... bun examples/inbox.ts                   # 3-msg inbox, solver mode
-ANTHROPIC_API_KEY=... bun examples/onboarding.ts              # multi-turn agent, observer mode
-ANTHROPIC_API_KEY=... bun examples/support-triage-aisdk.ts    # Vercel AI SDK + observer mode
+# tier 0 — drop-in trace, no goal
+ANTHROPIC_API_KEY=... bun examples/trace-only-aisdk.ts
+
+# tier 2 — observer mode with goal + status injection
+ANTHROPIC_API_KEY=... bun examples/onboarding.ts                  # Anthropic SDK
+ANTHROPIC_API_KEY=... bun examples/support-triage-aisdk.ts        # Vercel AI SDK
+
+# tier 3 — solver mode (for benches)
+bun examples/counter.ts                                            # no LLM
+ANTHROPIC_API_KEY=... bun examples/inbox.ts                        # LLMSolver, TDD progression
 ```
-
-**Vercel AI SDK demo** (`support-triage-aisdk.ts`) — a real support-ticket triage agent built with Vercel AI SDK's `generateText` + `tool()`. The agent reads a ticket, enriches with account data, searches the KB, then routes to auto-resolve / T2 / VIP. scenegrad observes via one-line `onStepFinish` and injects `status()` into the system prompt every step via `prepareStep`. Includes a weight-5 cardinal-sin assertion ("enterprise tickets must NOT be auto-resolved") — the agent obeys it because the gap math punishes violation. ~$0.001 per run on Haiku.
-
-**Onboarding demo** (`onboarding.ts`) — 4-turn conversational agent collecting name / email / role / welcome-email. Watch `status()` injection keep the agent moving forward — never asking for collected fields, always targeting the next unmet item.
 
 ## Status
 
-v0.0.1 — substrate types, defineEnv, observe (observer mode + Watcher), GreedySolver, LLMSolver (Anthropic), JSONL trace format.
+v0.0.1 — substrate types, `defineEnv`, `observe` (tiers 0/1/2), `trace.start()` (tier-0 alias), `GreedySolver`, `LLMSolver`, JSONL trace format, viewer scaffold.
 
-Reference benches live in [scene-bench](https://github.com/daslabhq/scene-bench): ARC-trajectory ships first; AutomationBench next (806 real tasks); S4Bench (SAP) and LeRobot (robotics) follow.
+Reference benches live in [scene-bench](https://github.com/daslabhq/scene-bench): ARC-trajectory ships first; AutomationBench (806 real tasks); S4Bench (SAP) and LeRobot (robotics) follow.
 
 ## Related
 

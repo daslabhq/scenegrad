@@ -1,37 +1,35 @@
 /**
  * Observer mode — scenegrad sits alongside an existing agent loop.
  *
- * You bring your agent (Vercel AI SDK, LangChain, custom). You give scenegrad:
- *   - snapshot(): how to fetch the current world state
- *   - goal(s):   what assertions define "done"
+ * Three tiers of value, each opt-in:
  *
- * scenegrad gives you back:
- *   - watcher.status()      — what's satisfied, what's unmet, current gap.
- *                             Inject into your system prompt so the agent
- *                             knows what's still left to do.
- *   - watcher.recordStep()  — call after each tool runs. scenegrad
- *                             re-snapshots the world and computes the delta.
- *   - watcher.trajectory()  — full timeline of steps + assertion states.
- *   - watcher.done()        — all assertions satisfied?
+ *   tier 0: trace        — just capture tool calls. No snapshot, no goal.
+ *                          Drop in 2 lines, get a scrubbable replay.
+ *   tier 1: + snapshot   — also capture world state between calls.
+ *                          See what *changed*, not just what was called.
+ *   tier 2: + goal       — gap-closure measurement, drift detection,
+ *                          status() injection for runtime guidance.
  *
- * This is the primary integration mode for production agents — your loop
- * stays the same, scenegrad observes the world (not just tool calls).
+ * One API; opt into more by passing more fields. Pay only for what you use.
  */
 
 import type { Assertion, AssertionState, ToolCall } from "./env.js";
 import { distance, checkAll } from "./env.js";
 
-export interface ObserveSpec<S> {
-  /** Fetch the current world state. May be async. Called whenever
-   *  scenegrad needs a fresh view (status, recordStep). */
-  snapshot: () => Promise<S> | S;
+export interface ObserveSpec<S = unknown> {
+  /** Optional. How to fetch the current world state.
+   *  Without this: only tool-call timing is captured. */
+  snapshot?: () => Promise<S> | S;
 
-  /** Assertions defining "done." May depend on current scene. */
-  goal: (s: S) => Assertion<S>[];
+  /** Optional. Assertions defining "done."
+   *  Without this: no gap measurement, no status() — pure trace. */
+  goal?: (s: S) => Assertion<S>[];
 
-  /** Optional: side-channel handlers for emitted events (e.g. write to
-   *  JSONL, push to viewer over WebSocket). */
+  /** Optional. Side-channel handlers for emitted events. */
   exporters?: ((event: ObserverEvent) => void | Promise<void>)[];
+
+  /** Optional friendly name for the trace (surfaces in the viewer). */
+  name?: string;
 }
 
 export type ObserverEvent =
@@ -40,7 +38,7 @@ export type ObserverEvent =
   | { kind: "done";     final_status: ObserverStatus<unknown> };
 
 export interface ObserverStatus<S> {
-  scene:        S;
+  scene:        S | undefined;
   assertions:   AssertionState[];
   satisfied:    AssertionState[];
   unmet:        AssertionState[];
@@ -58,12 +56,14 @@ export interface TrajectoryStep {
   delta:              number;
   assertions_before:  AssertionState[];
   assertions_after:   AssertionState[];
+  scene_before?:      unknown;
+  scene_after?:       unknown;
   ok:                 boolean;
   error?:             string;
   ts_ms:              number;
 }
 
-export class Watcher<S> {
+export class Watcher<S = unknown> {
   private trajectory_: TrajectoryStep[] = [];
   private lastScene?:  S;
   private startTs:     number;
@@ -72,18 +72,26 @@ export class Watcher<S> {
     this.startTs = Date.now();
   }
 
-  /** Take a fresh snapshot of the world. Caches as lastScene. */
-  async takeSnapshot(): Promise<S> {
+  /** Friendly name (defaults to "trace"). */
+  get name(): string { return this.spec.name ?? "trace"; }
+
+  /** Take a fresh snapshot of the world. Returns undefined if no snapshot
+   *  function was provided (tier-0). */
+  async takeSnapshot(): Promise<S | undefined> {
+    if (!this.spec.snapshot) return undefined;
     const s = await this.spec.snapshot();
     this.lastScene = s;
     await this.emit({ kind: "snapshot", scene: s, ts_ms: Date.now() - this.startTs });
     return s;
   }
 
-  /** Re-snapshot and compute current goal status — what's satisfied,
-   *  what's unmet, current gap. Inject into your system prompt. */
+  /** Re-snapshot and compute current goal status. Tier 2.
+   *  Without snapshot+goal, returns a vacant status (gap 0, no assertions). */
   async status(): Promise<ObserverStatus<S>> {
     const scene = await this.takeSnapshot();
+    if (!this.spec.goal || scene === undefined) {
+      return { scene, assertions: [], satisfied: [], unmet: [], gap: 0, done: true };
+    }
     const assertions_arr = this.spec.goal(scene);
     const goal = { assertions: assertions_arr };
     const all = checkAll(scene, goal);
@@ -97,8 +105,10 @@ export class Watcher<S> {
     };
   }
 
-  /** Record one step (a tool call's effect). Call after the tool runs.
-   *  scenegrad re-snapshots, computes the delta, fires exporters. */
+  /** Record one step. Call after the tool runs.
+   *  - With snapshot+goal: re-snapshots, computes deltas, detects drift.
+   *  - With snapshot only: captures world before/after, no deltas.
+   *  - Tier 0: just records the tool call + timing. */
   async recordStep(args: {
     tool?:             ToolCall | null;
     predicted_delta?:  number;
@@ -106,17 +116,28 @@ export class Watcher<S> {
     ok?:               boolean;
     error?:            string;
   } = {}): Promise<TrajectoryStep> {
-    const before = this.lastScene ?? await this.takeSnapshot();
-    const goalBefore = { assertions: this.spec.goal(before) };
-    const d_before = distance(before, goalBefore);
-    const assertions_before = checkAll(before, goalBefore);
+    const before = this.lastScene;
+    let after: S | undefined;
+    let d_before = 0, d_after = 0;
+    let assertions_before: AssertionState[] = [];
+    let assertions_after:  AssertionState[] = [];
 
-    // Re-snapshot — assume the tool has mutated the world externally.
-    const after = await this.spec.snapshot();
-    this.lastScene = after;
-    const goalAfter = { assertions: this.spec.goal(after) };
-    const d_after = distance(after, goalAfter);
-    const assertions_after = checkAll(after, goalAfter);
+    if (this.spec.snapshot) {
+      // re-snapshot to capture world delta
+      after = await this.spec.snapshot();
+      this.lastScene = after;
+
+      if (this.spec.goal && before !== undefined) {
+        const goalBefore = { assertions: this.spec.goal(before) };
+        d_before = distance(before, goalBefore);
+        assertions_before = checkAll(before, goalBefore);
+      }
+      if (this.spec.goal && after !== undefined) {
+        const goalAfter  = { assertions: this.spec.goal(after) };
+        d_after = distance(after, goalAfter);
+        assertions_after = checkAll(after, goalAfter);
+      }
+    }
 
     const step: TrajectoryStep = {
       step:              this.trajectory_.length,
@@ -128,6 +149,8 @@ export class Watcher<S> {
       delta:             d_before - d_after,
       assertions_before,
       assertions_after,
+      scene_before:      before,
+      scene_after:       after,
       ok:                args.ok ?? true,
       error:             args.error,
       ts_ms:             Date.now() - this.startTs,
@@ -138,8 +161,10 @@ export class Watcher<S> {
     return step;
   }
 
-  /** Quick check — all assertions satisfied? Re-snapshots. */
+  /** Quick check — all assertions satisfied?
+   *  Tier 0/1: always true (no goal to check). */
   async done(): Promise<boolean> {
+    if (!this.spec.goal || !this.spec.snapshot) return true;
     const s = await this.spec.snapshot();
     return this.spec.goal(s).every(a => a.check(s).satisfied);
   }
@@ -164,7 +189,7 @@ export class Watcher<S> {
   }
 }
 
-/** Factory — create a watcher from a spec. */
-export function observe<S>(spec: ObserveSpec<S>): Watcher<S> {
+/** Factory — create a watcher from a spec. All fields optional. */
+export function observe<S = unknown>(spec: ObserveSpec<S> = {}): Watcher<S> {
   return new Watcher(spec);
 }

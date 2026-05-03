@@ -41,3 +41,7 @@ export {
   type ObserverEvent,
   type TrajectoryStep as ObserverTrajectoryStep,
 } from "./observe.js";
+
+// trace — the lowest-friction tier-0 entry point.
+//   const t = trace.start(); // 2-line drop-in for any agent loop.
+export { trace, type TraceHandle } from "./trace.js";
