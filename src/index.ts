@@ -31,6 +31,33 @@ export { GreedySolver } from "./greedy.js";
 export { LLMSolver } from "./llm.js";
 export { defineEnv, type EnvSpec } from "./define.js";
 
+// tier 4 — predictor (world model) + dreamer solver + eval.
+// LLMPredictor is the v0 placeholder; future predictors (kNN over a trace
+// store, distilled, fully learned) drop in via the same Predictor interface.
+export type {
+  Predictor,
+  Consequence,
+  ScenePatch,
+  BlastEdge,
+  Analogue,
+} from "./predict.js";
+export {
+  diffScene,
+  predictorAsSimulate,
+  quickConsistencyCheck,
+} from "./predict.js";
+export { LLMPredictor, type LLMPredictorOpts } from "./predict-llm.js";
+export { DreamerSolver, type DreamerSolverOpts } from "./dreamer.js";
+export {
+  evalWorldModel,
+  tasksFromSolver,
+  formatMetrics,
+  type EvalTask,
+  type EvalOpts,
+  type WorldModelMetrics,
+  type WorldModelStepResult,
+} from "./eval/worldmodel.js";
+
 // Observer mode — the primary integration for production agent loops.
 // Your loop drives tools; scenegrad observes the world.
 export {
