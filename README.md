@@ -1,46 +1,34 @@
 # scenegrad
 
-> **Drop into your agent in 2 lines. Get a scrubbable replay. Level up when you're ready.**
+> **Trace your agent's world, not just its tool calls.**
+> Drop in 2 lines. Scrub a timeline of typed scenes — what your agent saw, what changed, where it drifted.
 
 [![v0.0.1](https://img.shields.io/badge/version-v0.0.1--alpha-orange)](https://github.com/daslabhq/scenegrad)
 [![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
 [![scenegrad viewer](./docs/demo.gif)](https://daslabhq.github.io/scenegrad/bulk.html)
 
-*Above: 12 support-triage trajectories at a glance, then drill into one. The bulk view shows the distribution (3 escalated-vip in red, 6 escalated-t2 in amber, 3 auto-resolved in emerald). Filter chips narrow the grid; click any card to scrub through the full trajectory with typed widgets — Ticket card on the left shows the world morphing (`status: new` → `investigating` → `escalated-vip`, `[CRITICAL]` reply appearing), Customer card on the right materializes with ENTERPRISE badge + LTV when the agent runs `enrich_with_account`. All 12 runs cost ~$0.02 in Haiku tokens.*
-
 **[→ Try the live demo](https://daslabhq.github.io/scenegrad/bulk.html)** · **[Single-trace viewer](https://daslabhq.github.io/scenegrad/)**
 
 ---
 
-## Is this for you?
+## The bug logs hide
 
-scenegrad pays off when your agent does **multi-step work that mutates state**. Specifically:
+Your agent ran a 6-step onboarding flow. The trace says it succeeded. The user complains next morning that no welcome email arrived.
 
-- ✅ Your agent calls multiple tools across multiple turns
-- ✅ Those tools change something — a CRM record, a ticket status, a database row, a scheduled job
-- ✅ You can't tell from the tool-call log alone whether the *world* ended up in the right state
-- ✅ You want to compare runs across models or prompts and see *trajectories*, not just final scores
-- ✅ You're using Vercel AI SDK, Anthropic SDK, LangChain, or your own loop (5-line drop-in for any)
-
-scenegrad is **not** the right fit if:
-
-- ❌ Your agent is single-call chat / RAG with no state mutation — Phoenix or Helicone will serve you better
-- ❌ You only need output scoring (LLM-as-judge) — Braintrust does that better; consider scenegrad alongside, not instead
-- ❌ You need a full eval platform with annotation queues, datasets-as-a-service, etc. — that's not the scope here
-
-We're explicitly *not* trying to be a replacement for those tools. scenegrad fills the gap they don't: visualizing typed scene state across multi-step trajectories, with a viewer that scales from single-trace to bulk grid.
-
----
-
-scenegrad is a tiny observability + evaluation substrate for AI agents. Pay only for what you use:
+With logs, you dig for an hour. With scenegrad, you scrub the trajectory and see step 4 — agent claimed `welcome_sent: true` in its working memory; the world snapshot says `welcome_at: null`. Drift caught in 30 seconds.
 
 ```ts
 import { trace } from "scenegrad";
 
-const t = trace.start();
+const t = trace.start({
+  snapshot: async () => ({
+    user:         await db.users.findOne({ session_id }),
+    welcome_sent: await emails.exists({ template: "welcome" }),
+  }),
+});
 
-// your existing Vercel AI SDK / LangChain / custom loop, untouched:
+// your existing Vercel AI SDK / Anthropic SDK / LangChain loop, untouched:
 const result = await generateText({
   model: anthropic("claude-haiku-4-5"),
   tools: { /* your tools, unchanged */ },
@@ -51,68 +39,119 @@ const result = await generateText({
 t.dump("./traces/run.jsonl");
 ```
 
-Then view it:
-
 ```bash
 npx scenegrad view ./traces           # bulk view of every JSONL in ./traces
-npx scenegrad view ./traces/run.jsonl # single-trace view of one file
+npx scenegrad view ./traces/run.jsonl # single-trace view
 ```
 
-> **v0.0.1 note:** the CLI requires [Bun](https://bun.sh) on your PATH (the bin scripts are TypeScript with a `#!/usr/bin/env bun` shebang). Node-compatible bin compilation lands in v0.0.2.
+> **v0.0.1 note:** the CLI requires [Bun](https://bun.sh) on your PATH. Node-compatible bin compilation lands in v0.0.2.
 
-That's it. Drop in, run, view your runs in a browser. No goal to design. No assertions to write. No restructuring of your agent.
+---
 
-When you want more — add a `snapshot()` to capture world state between calls. Add a `goal()` of assertions to measure gap closure. Each level is opt-in.
+## Five words you'll meet, all you need
+
+scenegrad has a small vocabulary. Each word is just the obvious name for what you're already looking at.
+
+### Scene — the world your agent acts on
+
+Same database. Three jobs. Three scenes:
+
+```
+support-triage scene  →  ticket card + customer LTV + recent thread
+inbox triage scene    →  message list + sender importance + status
+data-migration scene  →  source schema + target schema + row diff
+```
+
+A **scene** is the right rendering of the world for a specific job. Your `snapshot()` function returns it. Typed shapes for common scenes (Email, Message, Contact, Event, Task, Document) live in [`scenecast`](https://github.com/daslabhq/scenecast); your domain-specific ones extend them.
+
+### Diff — what changed, semantically
+
+Step 3 archived message #2. The scene before vs after differs in one field: `status: unread → archived`. That reads as one semantic change, not a byte-level mess. scenegrad diffs over the scene's typed shape, not over JSON bytes.
+
+### Goal + assertions — what "done" means
+
+Done is a list of assertions on the scene. *No unread messages. Important mail not archived. Welcome email sent.* An assertion has a `satisfied` flag and a `gap` measure, so "almost done" is a real number, not vibes.
+
+### Gradient — the work that closes the diff
+
+Goal scene minus current scene = a gap. The action sequence that closes the gap is the gradient. **Gradient = the work the agent has to do.** No backprop, no math — just "the actions from now to done." When the gradient stops shrinking, your agent is stuck and you can see it.
+
+### Predictor — imagine before commit
+
+For irreversible actions (real APIs, prod databases, outbound email), you want to know what'll happen *before* committing. A predictor takes `(scene, action)` and returns the imagined next scene + confidence. v0 ships an LLM predictor; the abstraction is built so kNN, distilled, and learned predictors swap in later.
+
+That's the whole vocabulary. Five words.
 
 ---
 
 ## The five-tier ladder
 
-| Tier | What you write | What you get |
-|---|---|---|
-| **0 — trace** | `trace.start()` + one hook | Tool-call timeline, scrubbable. Replaces logs. |
-| **1 — + snapshot** | Add `snapshot: () => fetchWorld()` | World deltas between calls. See *what changed*, not just what was called. |
-| **2 — + goal** | Add `goal: (s) => [...assertions]` | Gap-closure curve, drift detection, runtime `status()` for agent guidance. |
-| **3 — + solver** | Use `defineEnv` + `LLMSolver` / `GreedySolver` | scenegrad drives the loop — for benches, comparison, leaderboards. |
-| **4 — + predictor** | Add `Predictor` + `DreamerSolver` | Plan in imagination, act in the env. World-model accuracy as a measurable benchmark metric. |
+Adopt at the tier that matches your pain. Same trajectory format flows through all five — you can level up later without restructuring.
 
-The same trajectory format flows through all five tiers. You can adopt at tier 0, level up months later as you understand your agent's failure modes.
+| Tier | The pain it solves | What you write |
+|---|---|---|
+| **0 — trace** | "I can't tell from logs whether my agent worked" | `trace.start()` + 1 hook |
+| **1 — + snapshot** | "I want to see what changed in the *world*, not just what was *called*" | `snapshot: () => fetchWorld()` |
+| **2 — + goal** | "I want my agent grounded in actual world state, not its working memory" | `goal: (s) => [...assertions]` |
+| **3 — + solver** | "I want a typed env to benchmark agents in" | `defineEnv` + `LLMSolver` / `GreedySolver` |
+| **4 — + predictor** | "My agent's about to call an irreversible API. I want it to think first." | `Predictor` + `DreamerSolver` |
 
 ---
 
-## Tier 1 — add a snapshot
+## Tier 0 — drop in, get a scrubbable replay
 
-When tools mutate external state (DBs, APIs, CRMs, queues), seeing what *changed* is more useful than seeing what was *called*. Pass a `snapshot` function:
+Two lines. Works alongside Vercel AI SDK, Anthropic SDK, LangChain, or your own loop.
+
+```ts
+import { trace } from "scenegrad";
+const t = trace.start();
+
+const result = await generateText({
+  model: anthropic("claude-haiku-4-5"),
+  tools: { /* unchanged */ },
+  onStepFinish: t.captureStep,
+  prompt: "...",
+});
+
+t.dump("./traces/run.jsonl");
+```
+
+That's it. No goal to design. No assertions to write. No restructuring of your agent. You get a scrubbable timeline that replaces logs.
+
+---
+
+## Tier 1 — add a snapshot, see what changed
+
+When tools mutate external state, seeing the *delta* is more useful than seeing the *call*.
 
 ```ts
 const t = trace.start({
   snapshot: async () => ({
-    user:        await db.users.findOne({ session_id }),
+    user:         await db.users.findOne({ session_id }),
     welcome_sent: await emails.exists({ template: "welcome" }),
   }),
 });
 ```
 
-Now each step in the trajectory captures both `scene_before` and `scene_after`. The viewer can render the world delta per step.
+Now each step captures `scene_before` and `scene_after`. The viewer renders the world delta per step — and surfaces the moment the agent's belief diverges from the world.
 
 ---
 
-## Tier 2 — add a goal, get drift detection + status()
+## Tier 2 — add a goal, get drift detection + status() at runtime
 
-Define what "done" looks like as assertions:
+Define what "done" looks like as assertions. The same spec serves both runtime guidance and post-hoc evaluation.
 
 ```ts
 const watcher = observe({
   snapshot: async () => fetchWorld(),
   goal: (s) => [
-    { name: "name_collected",   check: (s) => ({ satisfied: !!s.user?.name,        gap: 1 }) },
-    { name: "email_collected",  check: (s) => ({ satisfied: !!s.user?.email,       gap: 1 }) },
-    { name: "role_specified",   check: (s) => ({ satisfied: !!s.user?.role,        gap: 1 }) },
-    { name: "welcome_email_sent", check: (s) => ({ satisfied: s.welcome_sent,       gap: 1 }) },
+    { name: "name_collected",     check: (s) => ({ satisfied: !!s.user?.name,    gap: 1 }) },
+    { name: "email_collected",    check: (s) => ({ satisfied: !!s.user?.email,   gap: 1 }) },
+    { name: "role_specified",     check: (s) => ({ satisfied: !!s.user?.role,    gap: 1 }) },
+    { name: "welcome_email_sent", check: (s) => ({ satisfied: s.welcome_sent,     gap: 1 }) },
   ],
 });
 
-// In your existing loop, each turn:
 const status = await watcher.status();
 
 const result = await generateText({
@@ -126,15 +165,15 @@ const result = await generateText({
 });
 ```
 
-The agent's checklist is now **grounded in actual world state — not its working memory.** When you evaluate post-hoc, you read the same assertions back through `watcher.trajectory()`. Spec written once; serves both runtime guidance and evaluation.
+The agent's checklist is now grounded in *actual world state*, not its working memory. Post-hoc, you read the same assertions back through `watcher.trajectory()`. Spec written once; serves both runtime guidance and evaluation.
 
 This is also TDD-shaped agent development: write the assertion → run → watch the gap → tighten. See `examples/inbox.ts` for the canonical three-iteration progression.
 
 ---
 
-## Tier 3 — solver mode, for benches
+## Tier 3 — drive the loop yourself, for benches
 
-When you want scenegrad to drive the loop (for benchmarks, comparison across models, controlled tests):
+When you want scenegrad to drive the agent (for benchmarks, comparing models, controlled tests):
 
 ```ts
 import { defineEnv, LLMSolver, GreedySolver } from "scenegrad";
@@ -147,11 +186,38 @@ const task = defineEnv({
   step:  (s, t) => t.name === "inc" ? { count: s.count + 1 } : { count: s.count - 1 },
 });
 
-await new GreedySolver().solve(task, "default");           // baseline
-await new LLMSolver({ model: "claude-haiku-4-5" }).solve(task, "default");  // LLM-driven
+await new GreedySolver().solve(task, "default");                          // optimal baseline
+await new LLMSolver({ model: "claude-haiku-4-5" }).solve(task, "default"); // LLM-driven
 ```
 
-Both solvers produce the same `SolveResult` shape. Compare them on the same env to see how much the LLM drifts from the optimal greedy baseline.
+Both produce the same `SolveResult` shape. Compare them on the same env to see how much the LLM drifts from the optimal greedy baseline.
+
+---
+
+## Tier 4 — predict before commit (for irreversible actions)
+
+Your agent's about to call an irreversible API — write to prod, send an email, charge a card. You want it to *think* before picking. Tier 4 wraps every candidate action in a predictor first; the agent commits only the action whose imagined outcome closes the most distance.
+
+```ts
+import { defineEnv, LLMPredictor, DreamerSolver, evalWorldModel } from "scenegrad";
+
+const env       = defineEnv({ /* same as tier 3 */ });
+const predictor = new LLMPredictor({ model: "claude-haiku-4-5" });
+
+// Plans in the predictor, commits one action at a time.
+await new DreamerSolver({ predictor, lookahead: 1 }).solve(env, "default");
+
+// Measure how good the predictor actually is — predicted vs actual scene_after.
+const metrics = await evalWorldModel({
+  env, predictor,
+  tasks: [{ taskId: "default", actions: [/* known action sequence */] }],
+});
+// → outcome_acc, scene_match, delta_match, avg_confidence, ece (calibration)
+```
+
+`Predictor` is a one-method interface. v0 ships `LLMPredictor` as a placeholder; future predictors (kNN over a trace store, distilled-from-traces, fully learned) drop in via the same API — `new DreamerSolver({ predictor })` doesn't change.
+
+The `evalWorldModel` metric scores predictors against real env traces — outcome accuracy, scene-match rate, delta-match rate, calibration. Ship a predictor → score it on any tier-3 env → publish the leaderboard column.
 
 ---
 
@@ -184,35 +250,38 @@ The `evalWorldModel` metric is the world-model-accuracy benchmark a predictor is
 
 ## Why this isn't another agent framework
 
-If you already use… | scenegrad adds…
----|---
-LangChain / LangGraph | Drift measurement and per-task evaluation. LangChain orchestrates; scenegrad measures.
-OpenTelemetry / Phoenix | A vocabulary for *what* to observe (scene + goal + diff), not just *how* to ship spans.
-Custom eval scripts | A common shape so your evals are comparable across runs, models, teams.
-System prompts to constrain behavior | A way to say "done" the framework can VERIFY, not just hope the LLM honors.
+| If you already use… | scenegrad adds… |
+|---|---|
+| LangChain / LangGraph | Drift measurement and per-task evaluation. LangChain orchestrates; scenegrad measures. |
+| OpenTelemetry / Phoenix | A vocabulary for *what* to observe (scene + goal + diff), not just *how* to ship spans. |
+| Custom eval scripts | A common shape so your evals are comparable across runs, models, teams. |
 
-scenegrad doesn't replace your agent. It instruments your task so behavior becomes visible, comparable, and refinable.
+scenegrad doesn't replace your agent. It instruments your task so behavior becomes visible, comparable, refinable.
 
----
-
-## What scenegrad does NOT do
-
-- **Doesn't write your distance function.** Domain-specific. Sometimes hard.
-- **Doesn't induce your toolkit.** You author it; [autocompile](https://github.com/mirkokiefer/autocompile) refines it over time.
-- **Doesn't solve local-optima / dead-end paths.** It exposes them; your solver picks the search strategy.
-- **Doesn't replace your agent.** Your agent runs whatever loop it runs; scenegrad measures it.
-- **Doesn't unify cross-domain distance.** ARC's "12 cells off" and SAP's "3 audit controls violated" aren't directly comparable — each domain owns its units.
-- **Doesn't force the agent to predict gradients.** The natural drift signals (gap-not-closing, goal-claimed-but-unmet, vs-baseline) work without polluting the prompt.
+**Not the right fit if** your agent is single-call chat / RAG with no state mutation (Phoenix or Helicone serve that better), or you only need output scoring (Braintrust does that better — consider scenegrad alongside, not instead).
 
 ---
 
-## The thinking framework
+## Scenes are the unit of agent work
 
-We sense the scene / world now. We make assertions on it — sensor values, query responses, photos, descriptions. **It's always an *image of* the scene, not the scene itself.**
+Your agent doesn't act on raw state; it acts on a **scene** — a typed, job-shaped view of the world that makes the next action obvious. Its loop is closing the diff between scene-now and the goal scene, with assertions defining "done," tools moving the world, and predictors imagining consequences before commit.
 
-We have a future scene vaguely in mind. We assert that as best we can. The diff between now and then is the gradient. Tools are actions that close it. We make progress, re-evaluate, sometimes redefine the goal as we learn. Reality is complex; the loop is simple.
+Scene design is the craft: a well-designed scene makes hard jobs solvable; a wrong one makes them impossible. The whole stack exists to make that craft tractable.
 
-Two gradients flow through this: **the agent's** (closing scene-now to scene-then per step) and **yours** (closing the spec to reality, by tightening assertions when behavior surprises you). Both are gradient descent. Both happen in the same framework.
+Read the protocol → [`PROTOCOL.md`](./PROTOCOL.md). Open questions → [`docs/open-questions.md`](./docs/open-questions.md).
+
+---
+
+## The stack
+
+scenegrad sits in a four-repo stack. Each has a single job:
+
+- **[`scenecast`](https://github.com/daslabhq/scenecast)** — typed scene shapes + multi-format renderers. *The vocabulary of scenes.*
+- **[`scene-otel`](https://github.com/daslabhq/scene-otel)** — wire format. Every snapshot becomes an OTel span event readable in Phoenix, Honeycomb, Braintrust, etc.
+- **`scenegrad`** *(this repo)* — gradients, solvers, predictors. *The verbs.*
+- **[`scenebench`](https://github.com/daslabhq/scenebench)** — benchmarks built on the stack (AutomationBench, τ-bench, LeRobot adapters; S4Bench, more native benches coming).
+
+Related: [`autocompile`](https://github.com/mirkokiefer/autocompile) — observes accumulated trajectories and hardens patterns to code.
 
 ---
 
@@ -220,7 +289,7 @@ Two gradients flow through this: **the agent's** (closing scene-now to scene-the
 
 ```bash
 npm install scenegrad
-# optional, for LLMSolver:
+# optional, for LLMSolver / LLMPredictor:
 npm install @anthropic-ai/sdk
 # optional, for tier-0 with Vercel AI SDK:
 npm install ai @ai-sdk/anthropic zod
@@ -229,26 +298,22 @@ npm install ai @ai-sdk/anthropic zod
 ANTHROPIC_API_KEY=... bun examples/trace-only-aisdk.ts
 
 # tier 2 — observer mode with goal + status injection
-ANTHROPIC_API_KEY=... bun examples/onboarding.ts                  # Anthropic SDK
-ANTHROPIC_API_KEY=... bun examples/support-triage-aisdk.ts        # Vercel AI SDK
+ANTHROPIC_API_KEY=... bun examples/onboarding.ts                 # Anthropic SDK
+ANTHROPIC_API_KEY=... bun examples/support-triage-aisdk.ts       # Vercel AI SDK
 
 # tier 3 — solver mode (for benches)
-bun examples/counter.ts                                            # no LLM
-ANTHROPIC_API_KEY=... bun examples/inbox.ts                        # LLMSolver, TDD progression
+bun examples/counter.ts                                           # no LLM
+ANTHROPIC_API_KEY=... bun examples/inbox.ts                       # LLMSolver, TDD progression
+
+# tier 4 — predictor + dreamer
+ANTHROPIC_API_KEY=... bun examples/dreamer-inbox.ts               # LLMSolver vs DreamerSolver, plus eval
 ```
 
 ## Status
 
-v0.0.1 — substrate types, `defineEnv`, `observe` (tiers 0/1/2), `trace.start()` (tier-0 alias), `GreedySolver`, `LLMSolver`, JSONL trace format, viewer scaffold.
+v0.0.1 — substrate types, `defineEnv`, `observe` (tiers 0/1/2), `trace.start()`, `GreedySolver`, `LLMSolver`, JSONL trace format, viewer scaffold. Tier 4 (`Predictor`, `DreamerSolver`, `evalWorldModel`) lands in v0.0.2.
 
 Reference benches live in [scenebench](https://github.com/daslabhq/scenebench): ARC-trajectory ships first; AutomationBench (806 real tasks); S4Bench (SAP) and LeRobot (robotics) follow.
-
-## Related
-
-- [`scene-otel`](https://github.com/daslabhq/scene-otel) — wire format scenegrad emits trajectories in
-- [`scenecast`](https://github.com/daslabhq/scenecast) — typed scene shapes + multi-size widgets that render trajectories visually
-- [`scenebench`](https://github.com/daslabhq/scenebench) — benchmarks built on scenegrad
-- [`autocompile`](https://github.com/mirkokiefer/autocompile) — observes accumulated trajectories, hardens patterns to code
 
 ## License
 
