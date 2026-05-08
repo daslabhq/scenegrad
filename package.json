@@ -14,7 +14,11 @@
     "./trace": "./src/trace.ts",
     "./solver": "./src/solver.ts",
     "./greedy": "./src/greedy.ts",
-    "./llm": "./src/llm.ts"
+    "./llm": "./src/llm.ts",
+    "./predict": "./src/predict.ts",
+    "./predict-llm": "./src/predict-llm.ts",
+    "./dreamer": "./src/dreamer.ts",
+    "./eval/worldmodel": "./src/eval/worldmodel.ts"
   },
   "bin": {
     "scenegrad": "./bin/scenegrad.ts",

@@ -58,13 +58,15 @@ npx scenegrad view ./traces           # bulk view of every JSONL in ./traces
 npx scenegrad view ./traces/run.jsonl # single-trace view of one file
 ```
 
+> **v0.0.1 note:** the CLI requires [Bun](https://bun.sh) on your PATH (the bin scripts are TypeScript with a `#!/usr/bin/env bun` shebang). Node-compatible bin compilation lands in v0.0.2.
+
 That's it. Drop in, run, view your runs in a browser. No goal to design. No assertions to write. No restructuring of your agent.
 
 When you want more — add a `snapshot()` to capture world state between calls. Add a `goal()` of assertions to measure gap closure. Each level is opt-in.
 
 ---
 
-## The four-tier ladder
+## The five-tier ladder
 
 | Tier | What you write | What you get |
 |---|---|---|
@@ -72,8 +74,9 @@ When you want more — add a `snapshot()` to capture world state between calls. 
 | **1 — + snapshot** | Add `snapshot: () => fetchWorld()` | World deltas between calls. See *what changed*, not just what was called. |
 | **2 — + goal** | Add `goal: (s) => [...assertions]` | Gap-closure curve, drift detection, runtime `status()` for agent guidance. |
 | **3 — + solver** | Use `defineEnv` + `LLMSolver` / `GreedySolver` | scenegrad drives the loop — for benches, comparison, leaderboards. |
+| **4 — + predictor** | Add `Predictor` + `DreamerSolver` | Plan in imagination, act in the env. World-model accuracy as a measurable benchmark metric. |
 
-The same trajectory format flows through all four tiers. You can adopt at tier 0, level up months later as you understand your agent's failure modes.
+The same trajectory format flows through all five tiers. You can adopt at tier 0, level up months later as you understand your agent's failure modes.
 
 ---
 
@@ -149,6 +152,33 @@ await new LLMSolver({ model: "claude-haiku-4-5" }).solve(task, "default");  // L
 ```
 
 Both solvers produce the same `SolveResult` shape. Compare them on the same env to see how much the LLM drifts from the optimal greedy baseline.
+
+---
+
+## Tier 4 — predictor + dreamer, plan in imagination
+
+When env-side `simulate()` isn't available (real APIs, prod databases, irreversible actions), you can't enumerate-and-pick. Tier 4 swaps the simulator for a **Predictor** — a learned-or-LLM model of `predict(scene, action) → consequence`. `DreamerSolver` calls the predictor on each candidate, picks the one whose imagined outcome closes the most distance, and commits a single action to the real env.
+
+```ts
+import { defineEnv, LLMPredictor, DreamerSolver, evalWorldModel } from "scenegrad";
+
+const env       = defineEnv({ /* same as tier 3 */ });
+const predictor = new LLMPredictor({ model: "claude-haiku-4-5" });
+
+// Plans in the predictor, commits one action at a time.
+await new DreamerSolver({ predictor, lookahead: 1 }).solve(env, "default");
+
+// Measure how good the predictor actually is — predicted vs actual scene_after.
+const metrics = await evalWorldModel({
+  env, predictor,
+  tasks: [{ taskId: "default", actions: [/* known action sequence */] }],
+});
+// → outcome_acc, scene_match, delta_match, avg_confidence, ece (calibration)
+```
+
+`Predictor` is a one-method interface. v0 ships `LLMPredictor` as a placeholder; future predictors (kNN over a trace store, distilled-from-traces, fully learned) drop in via the same API — `new DreamerSolver({ predictor })` doesn't change.
+
+The `evalWorldModel` metric is the world-model-accuracy benchmark a predictor is judged against. Ship a predictor → score it on any tier-3 env → publish the leaderboard column.
 
 ---
 
