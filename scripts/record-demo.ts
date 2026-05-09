@@ -15,9 +15,11 @@
 
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const URL = "http://localhost:7401/bulk.html";
-const OUT_DIR = "/Users/fm/git/daslab/ios2/Daslab/oss/scenegrad/docs/demo-recording";
+const OUT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "docs", "demo-recording");
 mkdirSync(OUT_DIR, { recursive: true });
 
 const browser = await chromium.launch({ headless: true });

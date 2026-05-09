@@ -2,12 +2,21 @@
  * SceneGradEnv — the contract every domain implements.
  *
  * scenegrad reframe: an agent's job is to close the gap between
- * scene_now and scene_then, where scene_then is a set of assertions.
+ * scene_now and scene_then, where scene_then is described by a goal.
  *
  * Domain author writes: scene(), goal(), tools(), step().
  * Framework derives: distance, simulate, solver dispatch, telemetry,
  * scrubbable trajectories — all from the same four methods.
+ *
+ * Goals come in two shapes (since we're mid-migration to mark predicates):
+ *   1. mark.Predicate          — the canonical shape going forward
+ *   2. { assertions: Assertion[] }  — legacy scenegrad shape, still supported
+ *
+ * `distance()` and `checkAll()` accept either; new code should pass Predicate.
  */
+
+import type { Predicate } from "mark";
+import { evaluate } from "mark";
 
 export type Distance = number;
 
@@ -22,11 +31,23 @@ export interface Assertion<S> {
   check(scene: S): { satisfied: boolean; gap: number; weight?: number };
 }
 
-export interface Goal<S> {
+export interface AssertionGoal<S> {
   assertions: Assertion<S>[];
   /** Optional: combine per-assertion gaps into a scalar.
    *  Default: weighted sum. */
   reduce?: (gaps: number[]) => number;
+}
+
+/**
+ * A goal is either a mark Predicate (preferred) or a legacy AssertionGoal.
+ * Polymorphic so existing scenebench code keeps working unchanged while new
+ * benches (arcbench, future SAPBench) can pass Predicates directly.
+ */
+export type Goal<S> = Predicate | AssertionGoal<S>;
+
+/** True when the value is a mark Predicate (vs an AssertionGoal). */
+export function isPredicate<S>(g: Goal<S>): g is Predicate {
+  return typeof (g as any).op === "string";
 }
 
 export interface StepResult<S> {
@@ -76,10 +97,14 @@ export interface SceneGradEnv<S, T extends ToolCall = ToolCall> {
 // ---------------------------------------------------------------------------
 
 /**
- * Default distance: weighted sum of unmet-assertion gaps.
- * Satisfied assertions contribute 0.
+ * Default distance: weighted sum of unmet-assertion gaps. Predicate goals
+ * delegate to mark.evaluate(); the resulting gap is the scalar.
+ * Satisfied conditions contribute 0.
  */
 export function distance<S>(scene: S, goal: Goal<S>): Distance {
+  if (isPredicate(goal)) {
+    return evaluate(scene, goal).gap;
+  }
   const gaps = goal.assertions.map(a => {
     const r = a.check(scene);
     if (r.satisfied) return 0;
@@ -90,7 +115,7 @@ export function distance<S>(scene: S, goal: Goal<S>): Distance {
 
 /**
  * Per-assertion check result — surfaces in trajectories so we can see
- * which specific goals are unmet at each step.
+ * which specific sub-goals are unmet at each step.
  */
 export interface AssertionState {
   name: string;
@@ -99,10 +124,48 @@ export interface AssertionState {
 }
 
 export function checkAll<S>(scene: S, goal: Goal<S>): AssertionState[] {
+  if (isPredicate(goal)) {
+    // Decompose top-level AND so each child surfaces as its own assertion-state
+    // row. Anything else evaluates as a single-element list.
+    const subs = goal.op === "and" ? goal.of : [goal];
+    return subs.map((sub, i) => {
+      const r = evaluate(scene, sub);
+      return {
+        name:      describePredicate(sub) ?? `assertion_${i}`,
+        satisfied: r.satisfied,
+        gap:       r.gap,
+      };
+    });
+  }
   return goal.assertions.map(a => {
     const r = a.check(scene);
     return { name: a.name, satisfied: r.satisfied, gap: r.satisfied ? 0 : (r.gap ?? 1) };
   });
+}
+
+/** Cheap human-readable summary of a Predicate, for display in trajectories. */
+function describePredicate(p: Predicate): string {
+  switch (p.op) {
+    case "eq":       return `${p.path} = ${jsonShort(p.value)}`;
+    case "neq":      return `${p.path} ≠ ${jsonShort(p.value)}`;
+    case "contains": return `${p.path} contains "${p.substring}"`;
+    case "exists":   return `${p.path} exists`;
+    case "missing":  return `${p.path} missing`;
+    case "find":     return `find in ${p.collection}`;
+    case "count":    return `count(${p.collection})`;
+    case "and":      return `all(${p.of.length})`;
+    case "or":       return `any(${p.of.length})`;
+    case "not":      return `not ${describePredicate(p.of)}`;
+  }
+}
+
+function jsonShort(v: unknown): string {
+  try {
+    const s = JSON.stringify(v);
+    return s.length > 40 ? s.slice(0, 37) + "..." : s;
+  } catch {
+    return String(v);
+  }
 }
 
 /**
