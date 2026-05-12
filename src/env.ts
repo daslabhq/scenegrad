@@ -8,15 +8,15 @@
  * Framework derives: distance, simulate, solver dispatch, telemetry,
  * scrubbable trajectories — all from the same four methods.
  *
- * Goals come in two shapes (since we're mid-migration to mark predicates):
- *   1. mark.Predicate          — the canonical shape going forward
+ * Goals come in two shapes (since we're mid-migration to autocheck):
+ *   1. autocheck.CheckExpr       — the canonical shape going forward
  *   2. { assertions: Assertion[] }  — legacy scenegrad shape, still supported
  *
- * `distance()` and `checkAll()` accept either; new code should pass Predicate.
+ * `distance()` and `checkAll()` accept either; new code should pass CheckExpr.
  */
 
-import type { Predicate } from "mark";
-import { evaluate } from "mark";
+import type { CheckExpr } from "autocheck";
+import { runCheck } from "autocheck";
 
 export type Distance = number;
 
@@ -39,14 +39,15 @@ export interface AssertionGoal<S> {
 }
 
 /**
- * A goal is either a mark Predicate (preferred) or a legacy AssertionGoal.
- * Polymorphic so existing scenebench code keeps working unchanged while new
- * benches (arcbench, future SAPBench) can pass Predicates directly.
+ * A goal is either an autocheck CheckExpr (preferred) or a legacy
+ * AssertionGoal. Polymorphic so existing scenebench code keeps working
+ * unchanged while new benches (arc-bench, future SAPBench) can pass
+ * CheckExprs directly.
  */
-export type Goal<S> = Predicate | AssertionGoal<S>;
+export type Goal<S> = CheckExpr | AssertionGoal<S>;
 
-/** True when the value is a mark Predicate (vs an AssertionGoal). */
-export function isPredicate<S>(g: Goal<S>): g is Predicate {
+/** True when the value is an autocheck CheckExpr (vs an AssertionGoal). */
+export function isCheckExpr<S>(g: Goal<S>): g is CheckExpr {
   return typeof (g as any).op === "string";
 }
 
@@ -97,13 +98,13 @@ export interface SceneGradEnv<S, T extends ToolCall = ToolCall> {
 // ---------------------------------------------------------------------------
 
 /**
- * Default distance: weighted sum of unmet-assertion gaps. Predicate goals
- * delegate to mark.evaluate(); the resulting gap is the scalar.
+ * Default distance: weighted sum of unmet-assertion gaps. CheckExpr goals
+ * delegate to autocheck.runCheck(); the resulting gap is the scalar.
  * Satisfied conditions contribute 0.
  */
 export function distance<S>(scene: S, goal: Goal<S>): Distance {
-  if (isPredicate(goal)) {
-    return evaluate(scene, goal).gap;
+  if (isCheckExpr(goal)) {
+    return runCheck(scene, goal).gap;
   }
   const gaps = goal.assertions.map(a => {
     const r = a.check(scene);
@@ -124,15 +125,15 @@ export interface AssertionState {
 }
 
 export function checkAll<S>(scene: S, goal: Goal<S>): AssertionState[] {
-  if (isPredicate(goal)) {
+  if (isCheckExpr(goal)) {
     // Decompose top-level AND so each child surfaces as its own assertion-state
     // row. Anything else evaluates as a single-element list.
     const subs = goal.op === "and" ? goal.of : [goal];
     return subs.map((sub, i) => {
-      const r = evaluate(scene, sub);
+      const r = runCheck(scene, sub);
       return {
-        name:      describePredicate(sub) ?? `assertion_${i}`,
-        satisfied: r.satisfied,
+        name:      describeCheckExpr(sub) ?? `assertion_${i}`,
+        satisfied: r.pass,
         gap:       r.gap,
       };
     });
@@ -143,8 +144,8 @@ export function checkAll<S>(scene: S, goal: Goal<S>): AssertionState[] {
   });
 }
 
-/** Cheap human-readable summary of a Predicate, for display in trajectories. */
-function describePredicate(p: Predicate): string {
+/** Cheap human-readable summary of a CheckExpr, for display in trajectories. */
+function describeCheckExpr(p: CheckExpr): string {
   switch (p.op) {
     case "eq":       return `${p.path} = ${jsonShort(p.value)}`;
     case "neq":      return `${p.path} ≠ ${jsonShort(p.value)}`;
@@ -155,7 +156,7 @@ function describePredicate(p: Predicate): string {
     case "count":    return `count(${p.collection})`;
     case "and":      return `all(${p.of.length})`;
     case "or":       return `any(${p.of.length})`;
-    case "not":      return `not ${describePredicate(p.of)}`;
+    case "not":      return `not ${describeCheckExpr(p.of)}`;
   }
 }
 
