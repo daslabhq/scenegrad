@@ -13,7 +13,7 @@
  * One API; opt into more by passing more fields. Pay only for what you use.
  */
 
-import type { Assertion, AssertionState, ToolCall } from "./env.js";
+import type { Assertion, AssertionState, Goal, ToolCall } from "./env.js";
 import { distance, checkAll } from "./env.js";
 
 export interface ObserveSpec<S = unknown> {
@@ -21,9 +21,11 @@ export interface ObserveSpec<S = unknown> {
    *  Without this: only tool-call timing is captured. */
   snapshot?: () => Promise<S> | S;
 
-  /** Optional. Assertions defining "done."
-   *  Without this: no gap measurement, no status() — pure trace. */
-  goal?: (s: S) => Assertion<S>[];
+  /** Optional. Goal defining "done."
+   *  Accepts either a mark Predicate (preferred, going forward) or a list
+   *  of legacy Assertions. Without it: no gap measurement, no status() —
+   *  pure trace. */
+  goal?: (s: S) => Goal<S> | Assertion<S>[];
 
   /** Optional. Side-channel handlers for emitted events. */
   exporters?: ((event: ObserverEvent) => void | Promise<void>)[];
@@ -92,8 +94,7 @@ export class Watcher<S = unknown> {
     if (!this.spec.goal || scene === undefined) {
       return { scene, assertions: [], satisfied: [], unmet: [], gap: 0, done: true };
     }
-    const assertions_arr = this.spec.goal(scene);
-    const goal = { assertions: assertions_arr };
+    const goal = normalizeGoal(this.spec.goal(scene));
     const all = checkAll(scene, goal);
     return {
       scene,
@@ -128,12 +129,12 @@ export class Watcher<S = unknown> {
       this.lastScene = after;
 
       if (this.spec.goal && before !== undefined) {
-        const goalBefore = { assertions: this.spec.goal(before) };
+        const goalBefore = normalizeGoal(this.spec.goal(before));
         d_before = distance(before, goalBefore);
         assertions_before = checkAll(before, goalBefore);
       }
       if (this.spec.goal && after !== undefined) {
-        const goalAfter  = { assertions: this.spec.goal(after) };
+        const goalAfter = normalizeGoal(this.spec.goal(after));
         d_after = distance(after, goalAfter);
         assertions_after = checkAll(after, goalAfter);
       }
@@ -166,7 +167,8 @@ export class Watcher<S = unknown> {
   async done(): Promise<boolean> {
     if (!this.spec.goal || !this.spec.snapshot) return true;
     const s = await this.spec.snapshot();
-    return this.spec.goal(s).every(a => a.check(s).satisfied);
+    const goal = normalizeGoal(this.spec.goal(s));
+    return checkAll(s, goal).every(a => a.satisfied);
   }
 
   /** Full trajectory so far. */
@@ -192,4 +194,15 @@ export class Watcher<S = unknown> {
 /** Factory — create a watcher from a spec. All fields optional. */
 export function observe<S = unknown>(spec: ObserveSpec<S> = {}): Watcher<S> {
   return new Watcher(spec);
+}
+
+/**
+ * Coerce whatever the user's `goal()` callback returns into the canonical
+ * Goal<S> shape. Accepts:
+ *   - mark Predicate         → returned as-is (preferred)
+ *   - { assertions: [...] }  → returned as-is (legacy AssertionGoal)
+ *   - Assertion[]            → wrapped as { assertions: [...] } (legacy direct)
+ */
+function normalizeGoal<S>(g: Goal<S> | Assertion<S>[]): Goal<S> {
+  return Array.isArray(g) ? { assertions: g } : g;
 }

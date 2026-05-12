@@ -2,12 +2,21 @@
  * SceneGradEnv — the contract every domain implements.
  *
  * scenegrad reframe: an agent's job is to close the gap between
- * scene_now and scene_then, where scene_then is a set of assertions.
+ * scene_now and scene_then, where scene_then is described by a goal.
  *
  * Domain author writes: scene(), goal(), tools(), step().
  * Framework derives: distance, simulate, solver dispatch, telemetry,
  * scrubbable trajectories — all from the same four methods.
+ *
+ * Goals come in two shapes (since we're mid-migration to autocheck):
+ *   1. autocheck.CheckExpr       — the canonical shape going forward
+ *   2. { assertions: Assertion[] }  — legacy scenegrad shape, still supported
+ *
+ * `distance()` and `checkAll()` accept either; new code should pass CheckExpr.
  */
+
+import type { CheckExpr } from "autocheck";
+import { runCheck } from "autocheck";
 
 export type Distance = number;
 
@@ -22,11 +31,24 @@ export interface Assertion<S> {
   check(scene: S): { satisfied: boolean; gap: number; weight?: number };
 }
 
-export interface Goal<S> {
+export interface AssertionGoal<S> {
   assertions: Assertion<S>[];
   /** Optional: combine per-assertion gaps into a scalar.
    *  Default: weighted sum. */
   reduce?: (gaps: number[]) => number;
+}
+
+/**
+ * A goal is either an autocheck CheckExpr (preferred) or a legacy
+ * AssertionGoal. Polymorphic so existing scenebench code keeps working
+ * unchanged while new benches (arc-bench, future SAPBench) can pass
+ * CheckExprs directly.
+ */
+export type Goal<S> = CheckExpr | AssertionGoal<S>;
+
+/** True when the value is an autocheck CheckExpr (vs an AssertionGoal). */
+export function isCheckExpr<S>(g: Goal<S>): g is CheckExpr {
+  return typeof (g as any).op === "string";
 }
 
 export interface StepResult<S> {
@@ -76,10 +98,14 @@ export interface SceneGradEnv<S, T extends ToolCall = ToolCall> {
 // ---------------------------------------------------------------------------
 
 /**
- * Default distance: weighted sum of unmet-assertion gaps.
- * Satisfied assertions contribute 0.
+ * Default distance: weighted sum of unmet-assertion gaps. CheckExpr goals
+ * delegate to autocheck.runCheck(); the resulting gap is the scalar.
+ * Satisfied conditions contribute 0.
  */
 export function distance<S>(scene: S, goal: Goal<S>): Distance {
+  if (isCheckExpr(goal)) {
+    return runCheck(scene, goal).gap;
+  }
   const gaps = goal.assertions.map(a => {
     const r = a.check(scene);
     if (r.satisfied) return 0;
@@ -90,7 +116,7 @@ export function distance<S>(scene: S, goal: Goal<S>): Distance {
 
 /**
  * Per-assertion check result — surfaces in trajectories so we can see
- * which specific goals are unmet at each step.
+ * which specific sub-goals are unmet at each step.
  */
 export interface AssertionState {
   name: string;
@@ -99,10 +125,48 @@ export interface AssertionState {
 }
 
 export function checkAll<S>(scene: S, goal: Goal<S>): AssertionState[] {
+  if (isCheckExpr(goal)) {
+    // Decompose top-level AND so each child surfaces as its own assertion-state
+    // row. Anything else evaluates as a single-element list.
+    const subs = goal.op === "and" ? goal.of : [goal];
+    return subs.map((sub, i) => {
+      const r = runCheck(scene, sub);
+      return {
+        name:      describeCheckExpr(sub) ?? `assertion_${i}`,
+        satisfied: r.pass,
+        gap:       r.gap,
+      };
+    });
+  }
   return goal.assertions.map(a => {
     const r = a.check(scene);
     return { name: a.name, satisfied: r.satisfied, gap: r.satisfied ? 0 : (r.gap ?? 1) };
   });
+}
+
+/** Cheap human-readable summary of a CheckExpr, for display in trajectories. */
+function describeCheckExpr(p: CheckExpr): string {
+  switch (p.op) {
+    case "eq":       return `${p.path} = ${jsonShort(p.value)}`;
+    case "neq":      return `${p.path} ≠ ${jsonShort(p.value)}`;
+    case "contains": return `${p.path} contains "${p.substring}"`;
+    case "exists":   return `${p.path} exists`;
+    case "missing":  return `${p.path} missing`;
+    case "find":     return `find in ${p.collection}`;
+    case "count":    return `count(${p.collection})`;
+    case "and":      return `all(${p.of.length})`;
+    case "or":       return `any(${p.of.length})`;
+    case "not":      return `not ${describeCheckExpr(p.of)}`;
+  }
+}
+
+function jsonShort(v: unknown): string {
+  try {
+    const s = JSON.stringify(v);
+    return s.length > 40 ? s.slice(0, 37) + "..." : s;
+  } catch {
+    return String(v);
+  }
 }
 
 /**
